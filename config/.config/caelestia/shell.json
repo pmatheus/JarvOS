@@ -24,13 +24,7 @@
         }
     },
     "background": {
-        "enabled": true,
-        "desktopClock": {
-            "enabled": false
-        },
-        "visualiser": {
-            "enabled": false
-        }
+        "enabled": false
     },
     "bar": {
         "persistent": true,
@@ -47,17 +41,31 @@
             { "id": "statusIcons", "enabled": true },
             { "id": "power", "enabled": true }
         ],
+        "popouts": {
+            "activeWindow": true,
+            "statusIcons": true,
+            "tray": true
+        },
+        "scrollActions": {
+            "brightness": true,
+            "workspaces": true,
+            "volume": true
+        },
         "workspaces": {
             "perMonitorWorkspaces": true,
             "shown": 5,
             "activeIndicator": true,
-            "showWindows": true
+            "showWindows": true,
+            "occupiedBg": true
         },
         "status": {
+            "showAudio": true,
             "showBattery": false,
             "showBluetooth": true,
             "showNetwork": true,
-            "showWifi": true
+            "showWifi": true,
+            "showMicrophone": true,
+            "showLockStatus": true
         }
     },
     "border": {
@@ -144,6 +152,31 @@
         "enabled": true
     },
     "utilities": {
-        "enabled": true
+        "enabled": true,
+        "maxToasts": 4,
+        "toasts": {
+            "audioInputChanged": true,
+            "audioOutputChanged": true,
+            "capsLockChanged": true,
+            "chargingChanged": true,
+            "configLoaded": true,
+            "dndChanged": true,
+            "gameModeChanged": true,
+            "kbLayoutChanged": true,
+            "vpnChanged": true
+        },
+        "vpn": {
+            "enabled": true,
+            "provider": []
+        },
+        "quickToggles": [
+            { "id": "wifi", "enabled": true },
+            { "id": "bluetooth", "enabled": true },
+            { "id": "mic", "enabled": true },
+            { "id": "settings", "enabled": true },
+            { "id": "gameMode", "enabled": true },
+            { "id": "dnd", "enabled": true },
+            { "id": "vpn", "enabled": true }
+        ]
     }
 }
