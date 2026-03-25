@@ -7,9 +7,9 @@ INDEX_FILE="$CACHE_DIR/index.txt"
 TIMESTAMP_FILE="$CACHE_DIR/last-update"
 LOCK_FILE="$CACHE_DIR/indexer.lock"
 
-SEARCH_DIRS=("$HOME" "$HOME/Documents" "$HOME/Downloads" "$HOME/Desktop" "$HOME/work")
-EXCLUDE_DIRS=(.git node_modules .cache .local/share .mozilla .config/chromium .config/google-chrome)
-MAX_DEPTH=3
+SEARCH_DIRS=("$HOME" "$HOME/Documents" "$HOME/Downloads" "$HOME/Desktop" "$HOME/work" "$HOME/Projects" "$HOME/Pictures" "$HOME/Music" "$HOME/Videos")
+EXCLUDE_DIRS=(.git node_modules .cache .local/share .mozilla .config/chromium .config/google-chrome __pycache__ .venv .env target build dist .next .nuxt)
+MAX_DEPTH=5
 
 mkdir -p "$CACHE_DIR"
 
