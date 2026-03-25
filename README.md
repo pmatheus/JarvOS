@@ -216,8 +216,9 @@ monitor = HDMI-A-1, 1920x1080@60, 2560x0, 1
 
 ## Credits
 
-- [END-4/dots-hyprland](https://github.com/end-4/dots-hyprland) — QuickShell foundation
-- [Caelestia](https://github.com/caelestia-dots/caelestia) — Animation curves, gestures, window groups, dynamic gaps
+- [chsoares/hypr-arch](https://github.com/chsoares/hypr-arch) — Original dotfiles foundation, installer, SDDM/GRUB theming, and desktop integration
+- [END-4/dots-hyprland](https://github.com/end-4/dots-hyprland) — QuickShell desktop shell, Material Design 3 widget system
+- [Caelestia](https://github.com/caelestia-dots/caelestia) — Animation physics, gestures, window groups, dynamic gaps
 - [Hyprland](https://hyprland.org/) — Wayland compositor
 - [QuickShell](https://quickshell.outfoxxed.me/) — Qt/QML shell framework
 
