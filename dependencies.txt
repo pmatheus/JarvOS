@@ -1,0 +1,169 @@
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  JarvOS — Package Dependencies                             ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+# === CORE SYSTEM ===
+axel
+bc
+coreutils
+cliphist
+cmake
+curl
+rsync
+wget
+ripgrep
+jq
+meson
+xdg-user-dirs
+xorg-xhost
+fish
+
+# === HYPRLAND ECOSYSTEM ===
+hyprland
+hypridle
+hyprcursor
+hyprland-qtutils
+hyprland-qt-support
+hyprlang
+hyprlock
+hyprpicker
+hyprsunset
+hyprutils
+hyprwayland-scanner
+xdg-desktop-portal-hyprland
+wl-clipboard
+
+# === AUDIO ===
+cava
+pavucontrol-qt
+wireplumber
+playerctl
+easyeffects
+
+# === FONTS & THEMES ===
+ttf-google-fonts-typewolf
+ttf-jetbrains-mono-nerd
+ttf-gabarito-git
+ttf-material-symbols-variable-git
+ttf-readex-pro
+starship
+fontconfig
+bibata-cursor-theme-bin
+
+# === DISPLAY ===
+brightnessctl
+ddcutil
+geoclue
+
+# === QT6/GTK ===
+qt6-base
+qt6-declarative
+qt6-wayland
+qt6-svg
+qt6-tools
+qt6-multimedia
+qt6-5compat
+qt6-imageformats
+qt6-positioning
+qt6-sensors
+qt6-translations
+qt6-virtualkeyboard
+qt6-quicktimeline
+qt6-avif-image-plugin
+qt6gtk2
+adw-gtk-theme-git
+gtk4
+libadwaita
+
+# === QUICKSHELL ===
+quickshell-git
+syntax-highlighting
+upower
+wtype
+ydotool
+fuzzel
+translate-shell
+
+# === DESKTOP UTILITIES ===
+hyprshot
+slurp
+swappy
+tesseract
+tesseract-data-eng
+wf-recorder
+wlogout
+grimblast-git
+satty
+
+# === XDG PORTALS ===
+xdg-desktop-portal
+xdg-desktop-portal-gtk
+
+# === SERVICES ===
+gnome-keyring
+polkit-gnome
+networkmanager
+nm-connection-editor
+bluetooth-utils
+openrgb
+
+# === LOGIN MANAGER ===
+sddm
+
+# === PYTHON ===
+clang
+uv
+python-pipx
+libsoup3
+libportal-gtk4
+gobject-introspection
+sassc
+python-opencv
+
+# === COLOR & WALLPAPER ===
+matugen-bin
+kde-material-you-colors
+swww
+
+# === CLI TOOLS ===
+kitty
+eza
+git
+zoxide
+yazi
+stow
+timeshift
+timeshift-autosnap
+plocate
+htop
+fzf
+fisher
+fastfetch
+bat
+pacman-contrib
+gum
+inotify-tools
+
+# === BOOTLOADER ===
+grub
+grub-btrfs
+efibootmgr
+
+# === APPS ===
+ferdium-bin
+obsidian
+spotify
+zen-browser-bin
+qalculate-gtk
+nautilus
+nautilus-open-any-terminal
+visual-studio-code-bin
+loupe
+
+# === LANGUAGE SUPPORT ===
+libvoikko
+hspell
+nuspell
+
+# === BUILD ===
+base-devel
