@@ -20,16 +20,16 @@ StyledRect {
     radius: Appearance.rounding.full
 
     clip: true
-    implicitWidth: Config.bar.sizes.innerWidth
-    implicitHeight: iconColumn.implicitHeight + Appearance.padding.normal * 2 - (Config.bar.status.showLockStatus && !Hypr.capsLock && !Hypr.numLock ? iconColumn.spacing : 0)
+    implicitHeight: Config.bar.sizes.innerWidth
+    implicitWidth: iconColumn.implicitWidth + Appearance.padding.normal * 2 - (Config.bar.status.showLockStatus && !Hypr.capsLock && !Hypr.numLock ? iconColumn.spacing : 0)
 
-    ColumnLayout {
+    RowLayout {
         id: iconColumn
 
-        anchors.left: parent.left
-        anchors.right: parent.right
+        anchors.top: parent.top
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: Appearance.padding.normal
+        anchors.right: parent.right
+        anchors.rightMargin: Appearance.padding.normal
 
         spacing: Appearance.spacing.smaller / 2
 
@@ -38,7 +38,7 @@ StyledRect {
             name: "lockstatus"
             active: Config.bar.status.showLockStatus
 
-            sourceComponent: ColumnLayout {
+            sourceComponent: RowLayout {
                 spacing: 0
 
                 Item {
@@ -166,12 +166,12 @@ StyledRect {
 
         // Bluetooth section
         WrappedLoader {
-            Layout.preferredHeight: implicitHeight
+            Layout.preferredWidth: implicitWidth
 
             name: "bluetooth"
             active: Config.bar.status.showBluetooth
 
-            sourceComponent: ColumnLayout {
+            sourceComponent: RowLayout {
                 spacing: Appearance.spacing.smaller / 2
 
                 // Bluetooth icon
@@ -225,7 +225,7 @@ StyledRect {
                 }
             }
 
-            Behavior on Layout.preferredHeight {
+            Behavior on Layout.preferredWidth {
                 Anim {}
             }
         }
@@ -264,7 +264,7 @@ StyledRect {
     component WrappedLoader: Loader {
         required property string name
 
-        Layout.alignment: Qt.AlignHCenter
+        Layout.alignment: Qt.AlignVCenter
         visible: active
     }
 }

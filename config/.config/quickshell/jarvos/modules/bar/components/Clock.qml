@@ -11,19 +11,19 @@ StyledRect {
     readonly property color colour: Colours.palette.m3tertiary
     readonly property int padding: Config.bar.clock.background ? Appearance.padding.normal : Appearance.padding.small
 
-    implicitWidth: Config.bar.sizes.innerWidth
-    implicitHeight: layout.implicitHeight + root.padding * 2
+    implicitHeight: Config.bar.sizes.innerWidth
+    implicitWidth: layout.implicitWidth + root.padding * 2
 
     color: Qt.alpha(Colours.tPalette.m3surfaceContainer, Config.bar.clock.background ? Colours.tPalette.m3surfaceContainer.a : 0)
     radius: Appearance.rounding.full
 
-    Column {
+    Row {
         id: layout
         anchors.centerIn: parent
         spacing: Appearance.spacing.small
 
         Loader {
-            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
 
             active: Config.bar.clock.showIcon
             visible: active
@@ -35,7 +35,7 @@ StyledRect {
         }
         
         StyledText {
-            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
 
             visible: Config.bar.clock.showDate
 
@@ -47,17 +47,17 @@ StyledRect {
         }
 
         Rectangle {
-            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
             visible: Config.bar.clock.showDate
-            height: visible ? 1 : 0
-            
-            width: parent.width * 0.8
+            width: visible ? 1 : 0
+
+            height: parent.height * 0.8
             color: root.colour
             opacity: 0.2
         }
 
         StyledText {
-            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
 
             horizontalAlignment: StyledText.AlignHCenter
             text: Time.format(Config.services.useTwelveHourClock ? "hh\nmm\nA" : "hh\nmm")

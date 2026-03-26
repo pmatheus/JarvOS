@@ -34,12 +34,12 @@ StyledRect {
     color: Qt.alpha(Colours.tPalette.m3surfaceContainer, (Config.bar.tray.background && items.count > 0) ? Colours.tPalette.m3surfaceContainer.a : 0)
     radius: Appearance.rounding.full
 
-    Column {
+    Row {
         id: layout
 
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.top: parent.top
-        anchors.topMargin: root.padding
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.left: parent.left
+        anchors.leftMargin: root.padding
         spacing: Appearance.spacing.small
 
         opacity: root.expanded || !Config.bar.tray.compact ? 1 : 0
@@ -82,8 +82,8 @@ StyledRect {
     Loader {
         id: expandIcon
 
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.right: parent.right
 
         active: Config.bar.tray.compact && items.count > 0
 
