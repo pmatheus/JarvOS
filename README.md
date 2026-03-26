@@ -17,12 +17,14 @@
 ```
 
 <p align="center">
-  <em>A modern, polished Arch Linux desktop environment with fluid animations,<br/>
-  glassmorphism, and a comprehensive widget system — one command to install.</em>
+  <em>The AI-native operating system.<br/>
+  A modern Arch Linux desktop where AI agents see, interact with, and control<br/>
+  every application — built on Hyprland, QuickShell, and Material Design 3.</em>
 </p>
 
 <p align="center">
   <a href="#one-line-install"><strong>Install</strong></a> &nbsp;&bull;&nbsp;
+  <a href="#ai-native"><strong>AI-Native</strong></a> &nbsp;&bull;&nbsp;
   <a href="#features"><strong>Features</strong></a> &nbsp;&bull;&nbsp;
   <a href="#key-bindings"><strong>Keybindings</strong></a> &nbsp;&bull;&nbsp;
   <a href="#architecture"><strong>Architecture</strong></a> &nbsp;&bull;&nbsp;
@@ -39,7 +41,25 @@
 
 ---
 
-> Merges the best of [END-4/dots-hyprland](https://github.com/end-4/dots-hyprland) and [Caelestia](https://github.com/caelestia-dots/caelestia) into a unified, opinionated desktop experience.
+> Merges the best of [END-4/dots-hyprland](https://github.com/end-4/dots-hyprland) and [Caelestia](https://github.com/caelestia-dots/caelestia) into a unified, opinionated desktop experience — then adds an AI control layer that lets LLM agents operate it autonomously.
+
+## AI-Native
+
+JarvOS is the first desktop environment designed for AI agents to control. Through **[hypr-box](https://github.com/pmatheus/hypr-box)**, any LLM agent can:
+
+- **See** the screen via per-monitor screenshots (readable by vision models)
+- **Interact** with any GUI application through coordinate-based clicking and keyboard input
+- **Manage** windows, workspaces, audio, wallpaper, notifications, and system state
+- **Launch** applications and wait for them to appear
+- **Read** screen content via OCR or multimodal vision
+- **Control** QuickShell panels, media playback, DPMS, and runtime config
+
+```bash
+# Install the AI control layer
+uv tool install -e hypr-box
+```
+
+**9 command groups, 40+ subcommands** — window, workspace, input, screenshot, panel, media, query, system, event. All output is structured JSON for agent consumption.
 
 ## One-Line Install
 
@@ -169,32 +189,38 @@ cd ~/JarvOS
 ## Architecture
 
 ```
-~/.config/
-├── hypr/
-│   ├── hyprland.conf              # Main entry — sources all modules
-│   ├── hyprland/
-│   │   ├── animations.conf        # 9 bezier curves & animation timings
-│   │   ├── colors.conf            # Theme colors (auto-generated from wallpaper)
-│   │   ├── decoration.conf        # Blur, shadows, rounding, opacity
-│   │   ├── env.conf               # Environment variables
-│   │   ├── execs.conf             # Startup applications
-│   │   ├── general.conf           # Gaps, borders, layout engine
-│   │   ├── gestures.conf          # Touchpad gesture config
-│   │   ├── group.conf             # Window grouping with gradient tabs
-│   │   ├── input.conf             # Keyboard, mouse, touchpad
-│   │   ├── keybinds.conf          # All keybindings
-│   │   ├── misc.conf              # Misc settings (VRR, tearing, etc.)
-│   │   ├── monitors.conf          # Per-machine monitor layout (not tracked)
-│   │   ├── rules.conf             # Window, workspace & layer rules
-│   │   ├── custom/*.conf          # Your overrides (not tracked by git)
-│   │   └── scripts/               # Helper scripts
-│   ├── hyprlock.conf              # Lock screen config
-│   ├── hypridle.conf              # Idle management
-│   └── shaders/                   # GPU shader effects
-└── quickshell/
-    ├── shell.qml                  # Shell entry — enable/disable modules
-    ├── modules/                   # 16 UI modules (92 reusable widgets)
-    └── services/                  # 25 backend services
+JarvOS/
+├── config/                        # Desktop dotfiles (stow-managed)
+│   └── .config/
+│       ├── hypr/
+│       │   ├── hyprland.conf      # Main entry — sources all modules
+│       │   ├── hyprland/
+│       │   │   ├── animations.conf    # 9 bezier curves & animation timings
+│       │   │   ├── colors.conf        # Theme colors (auto-generated from wallpaper)
+│       │   │   ├── decoration.conf    # Blur, shadows, rounding, opacity
+│       │   │   ├── env.conf           # Environment variables
+│       │   │   ├── execs.conf         # Startup applications
+│       │   │   ├── general.conf       # Gaps, borders, layout engine
+│       │   │   ├── keybinds.conf      # All keybindings
+│       │   │   ├── rules.conf         # Window, workspace & layer rules
+│       │   │   ├── custom/*.conf      # Your overrides (not tracked by git)
+│       │   │   └── scripts/           # Helper scripts
+│       │   ├── hyprlock.conf      # Lock screen config
+│       │   ├── hypridle.conf      # Idle management
+│       │   └── shaders/           # GPU shader effects
+│       └── quickshell/
+│           ├── shell.qml          # Shell entry — enable/disable modules
+│           ├── modules/           # 16 UI modules (92 reusable widgets)
+│           └── services/          # 25 backend services
+├── hypr-box/                      # AI control layer (submodule)
+│   ├── hypr_box/
+│   │   ├── backends/              # hyprctl, wtype, grim, wpctl wrappers
+│   │   └── commands/              # 9 CLI command groups
+│   └── pyproject.toml
+├── install.sh                     # One-line installer
+├── grub/                          # GRUB theme
+├── sddm/                          # SDDM theme
+└── wallpapers/                    # 26 curated wallpapers
 ```
 
 ### Customization
