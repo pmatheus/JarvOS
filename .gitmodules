@@ -1,0 +1,3 @@
+[submodule "hypr-box"]
+	path = hypr-box
+	url = https://github.com/pmatheus/hypr-box.git
