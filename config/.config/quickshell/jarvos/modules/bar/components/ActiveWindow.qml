@@ -28,15 +28,15 @@ Item {
 
     readonly property int maxHeight: {
         const otherModules = bar.children.filter(c => c.id && c.item !== this && c.id !== "spacer");
-        const otherHeight = otherModules.reduce((acc, curr) => acc + (curr.item.nonAnimHeight ?? curr.height), 0);
+        const otherWidth = otherModules.reduce((acc, curr) => acc + (curr.item.nonAnimHeight ?? curr.width), 0);
         // Length - 2 cause repeater counts as a child
-        return bar.height - otherHeight - bar.spacing * (bar.children.length - 1) - bar.vPadding * 2;
+        return bar.width - otherWidth - bar.spacing * (bar.children.length - 1) - bar.vPadding * 2;
     }
     property Title current: text1
 
     clip: true
-    implicitWidth: Math.max(icon.implicitWidth, current.implicitHeight)
-    implicitHeight: icon.implicitHeight + current.implicitWidth + current.anchors.topMargin
+    implicitWidth: icon.implicitWidth + current.implicitWidth + current.anchors.leftMargin
+    implicitHeight: Math.max(icon.implicitHeight, current.implicitHeight)
 
     Loader {
         anchors.fill: parent
@@ -56,7 +56,7 @@ Item {
                     popouts.hasCurrent = false;
                 } else {
                     popouts.currentName = "activewindow";
-                    popouts.currentCenter = root.mapToItem(root.bar, 0, root.implicitHeight / 2).y;
+                    popouts.currentCenter = root.mapToItem(root.bar, root.implicitWidth / 2, 0).x;
                     popouts.hasCurrent = true;
                 }
             }
@@ -66,7 +66,7 @@ Item {
     MaterialIcon {
         id: icon
 
-        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.verticalCenter: parent.verticalCenter
 
         animate: true
         text: Icons.getAppCategoryIcon(Hypr.activeToplevel?.lastIpcObject.class, "desktop_windows")
@@ -88,7 +88,7 @@ Item {
         font.pointSize: Appearance.font.size.smaller
         font.family: Appearance.font.family.mono
         elide: Qt.ElideRight
-        elideWidth: root.maxHeight - icon.height
+        elideWidth: root.maxHeight - icon.width
 
         onTextChanged: {
             const next = root.current === text1 ? text2 : text1;
@@ -98,7 +98,7 @@ Item {
         onElideWidthChanged: root.current.text = elidedText
     }
 
-    Behavior on implicitHeight {
+    Behavior on implicitWidth {
         Anim {
             duration: Appearance.anim.durations.expressiveDefaultSpatial
             easing.bezierCurve: Appearance.anim.curves.expressiveDefaultSpatial
@@ -108,28 +108,14 @@ Item {
     component Title: StyledText {
         id: text
 
-        anchors.horizontalCenter: icon.horizontalCenter
-        anchors.top: icon.bottom
-        anchors.topMargin: Appearance.spacing.small
+        anchors.verticalCenter: icon.verticalCenter
+        anchors.left: icon.right
+        anchors.leftMargin: Appearance.spacing.small
 
         font.pointSize: metrics.font.pointSize
         font.family: metrics.font.family
         color: root.colour
         opacity: root.current === this ? 1 : 0
-
-        transform: [
-            Translate {
-                x: Config.bar.activeWindow.inverted ? -text.implicitWidth + text.implicitHeight : 0
-            },
-            Rotation {
-                angle: Config.bar.activeWindow.inverted ? 270 : 90
-                origin.x: text.implicitHeight / 2
-                origin.y: text.implicitHeight / 2
-            }
-        ]
-
-        width: implicitHeight
-        height: implicitWidth
 
         Behavior on opacity {
             Anim {}
