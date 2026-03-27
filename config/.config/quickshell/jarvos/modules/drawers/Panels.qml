@@ -74,7 +74,8 @@ Item {
         panels: root
 
         anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
+        anchors.top: parent.top
+        anchors.topMargin: parent.height * 0.15
     }
 
     Dashboard.Wrapper {

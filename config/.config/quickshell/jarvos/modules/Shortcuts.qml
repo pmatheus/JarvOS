@@ -8,7 +8,6 @@ import Quickshell.Io
 Scope {
     id: root
 
-    property bool launcherInterrupted
     readonly property bool hasFullscreen: Hypr.focusedWorkspace?.toplevels.values.some(t => t.lastIpcObject.fullscreen === 2) ?? false
 
     CustomShortcut {
@@ -53,20 +52,12 @@ Scope {
     CustomShortcut {
         name: "launcher"
         description: "Toggle launcher"
-        onPressed: root.launcherInterrupted = false
-        onReleased: {
-            if (!root.launcherInterrupted && !root.hasFullscreen) {
+        onPressed: {
+            if (!root.hasFullscreen) {
                 const visibilities = Visibilities.getForActive();
                 visibilities.launcher = !visibilities.launcher;
             }
-            root.launcherInterrupted = false;
         }
-    }
-
-    CustomShortcut {
-        name: "launcherInterrupt"
-        description: "Interrupt launcher keybind"
-        onPressed: root.launcherInterrupted = true
     }
 
 

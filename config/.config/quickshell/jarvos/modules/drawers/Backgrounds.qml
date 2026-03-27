@@ -48,7 +48,7 @@ Shape {
         wrapper: root.panels.launcher
 
         startX: (root.width - wrapper.width) / 2 - rounding
-        startY: root.height
+        startY: wrapper.y
     }
 
     Dashboard.Background {

@@ -12,6 +12,7 @@ COMMENT_BIND_PATTERN = "#/#"
 
 parser = argparse.ArgumentParser(description='Hyprland keybind reader')
 parser.add_argument('--path', type=str, default="$HOME/.config/hypr/hyprland.conf", help='path to keybind file (sourcing isn\'t supported)')
+parser.add_argument('--show-hidden', action='store_true', help='include keybinds marked with [hidden]')
 args = parser.parse_args()
 content_lines = []
 reading_line = 0
@@ -131,7 +132,27 @@ def autogenerate_comment(dispatcher: str, params: str = "") -> str:
             return "Workspace: toggle special"
 
         case "exec":
-            return "Execute: {}".format(params)
+            # Clean up exec commands for display
+            p = params.strip()
+            # Extract app name from launch_first_available.sh
+            if "launch_first_available" in p:
+                apps = re.findall(r'"([^"]+)"', p)
+                if apps:
+                    return "Launch: {}".format(apps[0].split()[0].split("/")[-1])
+            # Extract app name from common patterns
+            if "workspace_action.sh" in p:
+                parts = p.split()
+                if len(parts) >= 3:
+                    action = parts[-2]
+                    ws = parts[-1]
+                    if action == "workspace":
+                        return "Workspace {}".format(ws)
+                    elif action == "movetoworkspacesilent":
+                        return "Send to workspace {}".format(ws)
+            # General: show just the command basename
+            cmd = p.split(";")[-1].strip().split("&&")[-1].strip().split("|")[0].strip()
+            basename = cmd.split()[0].split("/")[-1] if cmd else p
+            return basename
 
         case _:
             return ""
@@ -151,7 +172,15 @@ def get_keybind_at_line(line_number, line_start = 0):
     if comment:
         comment = comment[0]
         if comment.startswith("[hidden]"):
-            return None
+            if not args.show_hidden:
+                return None
+            # Strip [hidden] tag and use remaining text, or auto-generate
+            comment = comment.replace("[hidden]", "").strip()
+            if not comment:
+                comment = autogenerate_comment(dispatcher, params)
+            # Still skip pure hardware keys (XF86, mouse) even with --show-hidden
+            if key.startswith("XF86") or key.startswith("mouse:") or key in ("mouse_up", "mouse_down", "catchall"):
+                return None
     else:
         comment = autogenerate_comment(dispatcher, params)
 
