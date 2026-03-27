@@ -17,10 +17,14 @@ JsonObject {
     property list<var> entries: [
         {
             id: "logo",
-            enabled: true
+            enabled: false
         },
         {
             id: "workspaces",
+            enabled: false
+        },
+        {
+            id: "networkInfo",
             enabled: true
         },
         {
@@ -28,7 +32,7 @@ JsonObject {
             enabled: true
         },
         {
-            id: "activeWindow",
+            id: "dateWidget",
             enabled: true
         },
         {
@@ -105,11 +109,11 @@ JsonObject {
         property bool showAudio: false
         property bool showMicrophone: false
         property bool showKbLayout: false
-        property bool showNetwork: true
-        property bool showWifi: true
-        property bool showBluetooth: true
-        property bool showBattery: true
-        property bool showLockStatus: true
+        property bool showNetwork: false
+        property bool showWifi: false
+        property bool showBluetooth: false
+        property bool showBattery: false
+        property bool showLockStatus: false
     }
 
     component Clock: JsonObject {

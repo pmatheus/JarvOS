@@ -68,10 +68,6 @@ RowLayout {
                 popouts.hasCurrent = false;
                 item.expanded = true;
             }
-        } else if (id === "activeWindow" && Config.bar.popouts.activeWindow && Config.bar.activeWindow.showOnHover) {
-            popouts.currentName = id.toLowerCase();
-            popouts.currentCenter = item.mapToItem(root, itemWidth / 2, 0).x;
-            popouts.hasCurrent = true;
         }
     }
 
@@ -129,12 +125,26 @@ RowLayout {
                 }
             }
             DelegateChoice {
+                roleValue: "networkInfo"
+                delegate: WrappedLoader {
+                    sourceComponent: NetworkInfo {}
+                }
+            }
+            DelegateChoice {
                 roleValue: "activeWindow"
                 delegate: WrappedLoader {
                     Layout.fillHeight: true
                     sourceComponent: ActiveWindow {
                         bar: root
                         monitor: Brightness.getMonitorForScreen(root.screen)
+                    }
+                }
+            }
+            DelegateChoice {
+                roleValue: "dateWidget"
+                delegate: WrappedLoader {
+                    sourceComponent: DateWidget {
+                        visibilities: root.visibilities
                     }
                 }
             }

@@ -25,6 +25,11 @@ Item {
             Apps.launch(root.modelData);
             root.visibilities.launcher = false;
         }
+
+        function onClickedWithModifiers(modifiers: int): void {
+            Apps.launch(root.modelData);
+            root.visibilities.launcher = false;
+        }
     }
 
     Item {

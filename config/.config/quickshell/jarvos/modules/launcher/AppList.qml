@@ -67,13 +67,22 @@ StyledListView {
             Schemes.reload();
     }
 
+    function combinedSearch(text: string): list<var> {
+        if (!text)
+            return [];
+        const apps = Apps.search(text).map(e => ({ _type: "app", entry: e }));
+        const files = FileSearch.search(text).map(e => ({ _type: e.isDir ? "folder" : "file", entry: e }));
+        // Interleave: apps first, then files
+        return apps.concat(files);
+    }
+
     states: [
         State {
             name: "apps"
 
             PropertyChanges {
-                model.values: Apps.search(search.text)
-                root.delegate: appItem
+                model.values: root.combinedSearch(search.text)
+                root.delegate: combinedItem
             }
         },
         State {
@@ -212,6 +221,40 @@ StyledListView {
         Anim {
             properties: "opacity,scale"
             to: 1
+        }
+    }
+
+    Component {
+        id: combinedItem
+
+        Loader {
+            id: itemLoader
+
+            required property var modelData
+
+            anchors.left: parent?.left
+            anchors.right: parent?.right
+            height: Config.launcher.sizes.itemHeight
+
+            sourceComponent: modelData._type === "app" ? appItemInner : fileItemInner
+
+            Component {
+                id: appItemInner
+
+                AppItem {
+                    modelData: itemLoader.modelData.entry
+                    visibilities: root.visibilities
+                }
+            }
+
+            Component {
+                id: fileItemInner
+
+                FileItem {
+                    modelData: itemLoader.modelData.entry
+                    visibilities: root.visibilities
+                }
+            }
         }
     }
 

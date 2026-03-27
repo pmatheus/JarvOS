@@ -6,6 +6,7 @@ import "modules"
 import "modules/drawers"
 import "modules/background"
 import "modules/areapicker"
+import "modules/cheatsheet"
 import "modules/lock"
 import Quickshell
 
@@ -13,6 +14,7 @@ ShellRoot {
     Background {}
     Drawers {}
     AreaPicker {}
+    Cheatsheet {}
     Lock {
         id: lock
     }

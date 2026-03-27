@@ -25,11 +25,20 @@ Item {
         id: listWrapper
 
         implicitWidth: list.width
-        implicitHeight: list.height + root.padding
+        implicitHeight: search.text ? list.height + root.padding : 0
 
         anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: searchWrapper.top
-        anchors.bottomMargin: root.padding
+        anchors.top: searchWrapper.bottom
+        anchors.topMargin: search.text ? root.padding : 0
+
+        visible: search.text.length > 0
+
+        Behavior on implicitHeight {
+            Anim {
+                duration: Appearance.anim.durations.large
+                easing.bezierCurve: Appearance.anim.curves.emphasizedDecel
+            }
+        }
 
         ContentList {
             id: list
@@ -52,7 +61,7 @@ Item {
 
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.bottom: parent.bottom
+        anchors.top: parent.top
         anchors.margins: root.padding
 
         implicitHeight: Math.max(searchIcon.implicitHeight, search.implicitHeight, clearIcon.implicitHeight)
@@ -79,23 +88,42 @@ Item {
             topPadding: Appearance.padding.larger
             bottomPadding: Appearance.padding.larger
 
-            placeholderText: qsTr("Type \"%1\" for commands").arg(Config.launcher.actionPrefix)
+            placeholderText: qsTr("Search apps, files, folders\u2026  \"%1\" for commands").arg(Config.launcher.actionPrefix)
 
-            onAccepted: {
+            onAccepted: search.launchCurrent(0)
+
+            function launchCurrent(modifiers: int): void {
                 const currentItem = list.currentList?.currentItem;
-                if (currentItem) {
-                    if (list.showWallpapers) {
-                        if (Colours.scheme === "dynamic" && currentItem.modelData.path !== Wallpapers.actualCurrent)
-                            Wallpapers.previewColourLock = true;
-                        Wallpapers.setWallpaper(currentItem.modelData.path);
-                        root.visibilities.launcher = false;
-                    } else if (text.startsWith(Config.launcher.actionPrefix)) {
-                        if (text.startsWith(`${Config.launcher.actionPrefix}calc `))
-                            currentItem.onClicked();
+                if (!currentItem)
+                    return;
+
+                if (list.showWallpapers) {
+                    if (Colours.scheme === "dynamic" && currentItem.modelData.path !== Wallpapers.actualCurrent)
+                        Wallpapers.previewColourLock = true;
+                    Wallpapers.setWallpaper(currentItem.modelData.path);
+                    root.visibilities.launcher = false;
+                } else if (text.startsWith(Config.launcher.actionPrefix)) {
+                    if (text.startsWith(`${Config.launcher.actionPrefix}calc `))
+                        currentItem.onClicked();
+                    else
+                        currentItem.modelData.onClicked(list.currentList);
+                } else {
+                    // Combined item: resolve through Loader
+                    const resolved = currentItem.item ?? currentItem;
+                    if (resolved.modelData?._type === "file" || resolved.modelData?._type === "folder") {
+                        const fileItem = resolved;
+                        if (modifiers & Qt.ShiftModifier)
+                            fileItem.openInTerminal();
+                        else if (modifiers & Qt.AltModifier)
+                            fileItem.openInFileManager();
+                        else if (modifiers & Qt.ControlModifier)
+                            fileItem.openWithAntigravity();
                         else
-                            currentItem.modelData.onClicked(list.currentList);
+                            fileItem.openDefault();
                     } else {
-                        Apps.launch(currentItem.modelData);
+                        // App entry (may be wrapped or direct)
+                        const entry = resolved.modelData?.entry ?? resolved.modelData;
+                        Apps.launch(entry);
                         root.visibilities.launcher = false;
                     }
                 }
@@ -107,6 +135,15 @@ Item {
             Keys.onEscapePressed: root.visibilities.launcher = false
 
             Keys.onPressed: event => {
+                // Modifier+Enter: launch with modifier action
+                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                    if (event.modifiers & (Qt.ShiftModifier | Qt.AltModifier | Qt.ControlModifier)) {
+                        search.launchCurrent(event.modifiers);
+                        event.accepted = true;
+                        return;
+                    }
+                }
+
                 if (!Config.launcher.vimKeybinds)
                     return;
 
