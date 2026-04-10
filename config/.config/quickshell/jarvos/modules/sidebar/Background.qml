@@ -19,7 +19,7 @@ ShapePath {
     readonly property real utilsRoundingX: utilsWidthDiff < rounding * 2 ? utilsWidthDiff / 2 : rounding
 
     strokeWidth: -1
-    fillColor: Colours.palette.m3surface
+    fillColor: wrapper.width > 0 ? Colours.palette.m3surface : "transparent"
 
     PathLine {
         relativeX: -root.wrapper.width - root.notifsRoundingX

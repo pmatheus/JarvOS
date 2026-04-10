@@ -147,13 +147,35 @@ Scope {
 
     property bool cheatsheetVisible: false
 
+    onCheatsheetVisibleChanged: {
+        if (cheatsheetVisible) {
+            cursorProc.running = true;
+        }
+    }
     onKeybindColumnsChanged: columnsModel.values = cheatRoot.keybindColumns
+
+    Process {
+        id: cursorProc
+        command: ["hyprctl", "cursorpos", "-j"]
+        stdout: SplitParser {
+            onRead: data => {
+                try {
+                    const pos = JSON.parse(data);
+                    for (const s of Quickshell.screens) {
+                        if (pos.x >= s.x && pos.x < s.x + s.width) {
+                            win.screen = s;
+                            return;
+                        }
+                    }
+                } catch (e) {}
+            }
+        }
+    }
 
     PanelWindow {
         id: win
 
         visible: cheatRoot.cheatsheetVisible
-        screen: Hypr.focusedMonitor?.screen ?? Quickshell.screens[0]
         WlrLayershell.namespace: "caelestia-cheatsheet"
         WlrLayershell.exclusionMode: ExclusionMode.Ignore
         WlrLayershell.layer: WlrLayer.Overlay

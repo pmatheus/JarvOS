@@ -17,46 +17,33 @@ Item {
 
     readonly property int padding: Appearance.padding.large
     readonly property int rounding: Appearance.rounding.large
+    readonly property bool hasQuery: search.text.length > 0
+    property bool showResults: false
 
-    implicitWidth: listWrapper.width + padding * 2
-    implicitHeight: searchWrapper.height + listWrapper.height + padding * 2
-
-    Item {
-        id: listWrapper
-
-        implicitWidth: list.width
-        implicitHeight: search.text ? list.height + root.padding : 0
-
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.top: searchWrapper.bottom
-        anchors.topMargin: search.text ? root.padding : 0
-
-        visible: search.text.length > 0
-
-        Behavior on implicitHeight {
-            Anim {
-                duration: Appearance.anim.durations.large
-                easing.bezierCurve: Appearance.anim.curves.emphasizedDecel
-            }
-        }
-
-        ContentList {
-            id: list
-
-            content: root
-            visibilities: root.visibilities
-            panels: root.panels
-            maxHeight: root.maxHeight - searchWrapper.implicitHeight - root.padding * 3
-            search: search
-            padding: root.padding
-            rounding: root.rounding
+    onHasQueryChanged: {
+        if (hasQuery) {
+            bufferTimer.restart();
+        } else {
+            bufferTimer.stop();
+            showResults = false;
         }
     }
 
+    // Debounce: wait for results to settle before first reveal
+    Timer {
+        id: bufferTimer
+        interval: 180
+        onTriggered: root.showResults = true
+    }
+
+    implicitWidth: Config.launcher.sizes.itemWidth + padding * 2
+    implicitHeight: searchWrapper.height + resultsPanel.height + padding * 2
+
+    // Search bar — standalone rounded pill
     StyledRect {
         id: searchWrapper
 
-        color: Colours.layer(Colours.palette.m3surfaceContainer, 2)
+        color: Qt.alpha(Colours.palette.m3surface, 0.96)
         radius: Appearance.rounding.full
 
         anchors.left: parent.left
@@ -88,7 +75,7 @@ Item {
             topPadding: Appearance.padding.larger
             bottomPadding: Appearance.padding.larger
 
-            placeholderText: qsTr("Search apps, files, folders\u2026  \"%1\" for commands").arg(Config.launcher.actionPrefix)
+            placeholderText: qsTr("JarvOS Search")
 
             onAccepted: search.launchCurrent(0)
 
@@ -108,7 +95,6 @@ Item {
                     else
                         currentItem.modelData.onClicked(list.currentList);
                 } else {
-                    // Combined item: resolve through Loader
                     const resolved = currentItem.item ?? currentItem;
                     if (resolved.modelData?._type === "file" || resolved.modelData?._type === "folder") {
                         const fileItem = resolved;
@@ -121,7 +107,6 @@ Item {
                         else
                             fileItem.openDefault();
                     } else {
-                        // App entry (may be wrapped or direct)
                         const entry = resolved.modelData?.entry ?? resolved.modelData;
                         Apps.launch(entry);
                         root.visibilities.launcher = false;
@@ -135,7 +120,6 @@ Item {
             Keys.onEscapePressed: root.visibilities.launcher = false
 
             Keys.onPressed: event => {
-                // Modifier+Enter: launch with modifier action
                 if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                     if (event.modifiers & (Qt.ShiftModifier | Qt.AltModifier | Qt.ControlModifier)) {
                         search.launchCurrent(event.modifiers);
@@ -222,6 +206,59 @@ Item {
                 Anim {
                     duration: Appearance.anim.durations.small
                 }
+            }
+        }
+    }
+
+    // Results panel — clips content, reveals by growing height
+    Item {
+        id: resultsPanel
+
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: searchWrapper.bottom
+        anchors.leftMargin: root.padding
+        anchors.rightMargin: root.padding
+        anchors.topMargin: Appearance.spacing.small
+
+        height: root.showResults ? resultsBg.implicitHeight : 0
+        clip: true
+
+        Behavior on height {
+            Anim {
+                duration: Appearance.anim.durations.normal
+                easing.bezierCurve: Appearance.anim.curves.emphasizedDecel
+            }
+        }
+
+        // Content is always full-size inside, just clipped by parent
+        StyledRect {
+            id: resultsBg
+
+            anchors.left: parent.left
+            anchors.right: parent.right
+            // Pinned to top so clip reveals from top down
+            anchors.top: parent.top
+
+            color: Qt.alpha(Colours.palette.m3surface, 0.96)
+            radius: root.rounding
+
+            implicitHeight: list.height + root.padding * 2
+
+            ContentList {
+                id: list
+
+                anchors.top: parent.top
+                anchors.topMargin: root.padding
+                anchors.horizontalCenter: parent.horizontalCenter
+
+                content: root
+                visibilities: root.visibilities
+                panels: root.panels
+                maxHeight: root.maxHeight - searchWrapper.implicitHeight - root.padding * 4
+                search: search
+                padding: root.padding
+                rounding: root.rounding
             }
         }
     }

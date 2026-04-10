@@ -44,6 +44,17 @@ CustomMouseArea {
         return y > height - Math.max(Config.border.minThickness, Config.border.thickness + panel.height) - (isCorner ? Config.border.rounding : 0) && withinPanelWidth(panel, x, y);
     }
 
+    function inNotificationArea(x: real, y: real): bool {
+        if (panels.notifications.height === 0)
+            return false;
+        const panelX = Config.border.thickness + panels.notifications.x;
+        const panelY = bar.implicitHeight + panels.notifications.y;
+        return y >= panelY - Config.border.rounding
+            && y < panelY + panels.notifications.height + Config.border.rounding
+            && x >= panelX - Config.border.rounding
+            && x <= panelX + panels.notifications.width + Config.border.rounding;
+    }
+
     function onWheel(event: WheelEvent): void {
         if (event.y < bar.implicitHeight) {
             bar.handleWheel(event.x, event.angleDelta);
@@ -68,7 +79,10 @@ CustomMouseArea {
             if (!utilitiesShortcutActive)
                 visibilities.utilities = false;
 
-            if (!popouts.currentName.startsWith("traymenu") || (popouts.current?.depth ?? 0) <= 1) {
+            const isTrayMenu = popouts.currentName.startsWith("traymenu");
+            const hasSubMenu = isTrayMenu && (popouts.current?.depth > 1);
+
+            if (!isTrayMenu || !hasSubMenu) {
                 popouts.hasCurrent = false;
                 bar.closeTray();
             }
@@ -201,9 +215,15 @@ CustomMouseArea {
         // Show popouts on hover
         if (y < bar.implicitHeight) {
             bar.checkPopout(x);
-        } else if ((!popouts.currentName.startsWith("traymenu") || (popouts.current?.depth ?? 0) <= 1) && !inTopPanel(panels.popouts, x, y)) {
-            popouts.hasCurrent = false;
-            bar.closeTray();
+        } else {
+            const isTrayMenu = popouts.currentName.startsWith("traymenu");
+            const hasSubMenu = isTrayMenu && (popouts.current?.depth > 1);
+            const inPopout = inTopPanel(panels.popouts, x, y) && !inNotificationArea(x, y);
+
+            if (popouts.hasCurrent && (!isTrayMenu || !hasSubMenu) && !inPopout) {
+                popouts.hasCurrent = false;
+                bar.closeTray();
+            }
         }
     }
 

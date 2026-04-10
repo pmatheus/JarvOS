@@ -13,7 +13,6 @@ Item {
     required property var panels
 
     readonly property bool shouldBeActive: visibilities.launcher && Config.launcher.enabled
-    property int contentHeight
 
     readonly property real maxHeight: {
         let max = screen.height - Config.border.thickness * 2 - Appearance.spacing.large;
@@ -22,61 +21,30 @@ Item {
         return max;
     }
 
-    onMaxHeightChanged: timer.start()
-
-    visible: height > 0
-    implicitHeight: 0
+    visible: shouldBeActive
+    // Directly track content size — no wrapper animation
+    implicitHeight: content.active && content.visible ? content.implicitHeight : 0
     implicitWidth: content.implicitWidth
 
     onShouldBeActiveChanged: {
         if (shouldBeActive) {
-            timer.stop();
-            hideAnim.stop();
-            showAnim.start();
+            content.active = true;
+            content.visible = true;
         } else {
-            showAnim.stop();
-            hideAnim.start();
+            // Small delay before deactivating so close feels instant
+            deactivateTimer.start();
         }
     }
 
-    SequentialAnimation {
-        id: showAnim
+    Timer {
+        id: deactivateTimer
 
-        Anim {
-            target: root
-            property: "implicitHeight"
-            to: root.contentHeight
-            duration: Appearance.anim.durations.expressiveDefaultSpatial
-            easing.bezierCurve: Appearance.anim.curves.expressiveDefaultSpatial
-        }
-        ScriptAction {
-            script: root.implicitHeight = Qt.binding(() => content.implicitHeight)
-        }
-    }
-
-    SequentialAnimation {
-        id: hideAnim
-
-        ScriptAction {
-            script: root.implicitHeight = root.implicitHeight
-        }
-        Anim {
-            target: root
-            property: "implicitHeight"
-            to: 0
-            easing.bezierCurve: Appearance.anim.curves.emphasized
-        }
-    }
-
-    Connections {
-        target: Config.launcher
-
-        function onEnabledChanged(): void {
-            timer.start();
-        }
-
-        function onMaxShownChanged(): void {
-            timer.start();
+        interval: 50
+        onTriggered: {
+            if (!root.shouldBeActive) {
+                content.visible = false;
+                content.active = Qt.binding(() => root.shouldBeActive);
+            }
         }
     }
 
@@ -84,28 +52,8 @@ Item {
         target: DesktopEntries.applications
 
         function onValuesChanged(): void {
-            if (DesktopEntries.applications.values.length < Config.launcher.maxShown)
-                timer.start();
-        }
-    }
-
-    Timer {
-        id: timer
-
-        interval: Appearance.anim.durations.extraLarge
-        onRunningChanged: {
-            if (running && !root.shouldBeActive) {
-                content.visible = false;
+            if (root.shouldBeActive)
                 content.active = true;
-            } else {
-                root.contentHeight = Math.min(root.maxHeight, content.implicitHeight);
-                content.active = Qt.binding(() => root.shouldBeActive || root.visible);
-                content.visible = true;
-                if (showAnim.running) {
-                    showAnim.stop();
-                    showAnim.start();
-                }
-            }
         }
     }
 
@@ -117,14 +65,11 @@ Item {
 
         visible: false
         active: false
-        Component.onCompleted: timer.start()
 
         sourceComponent: Content {
             visibilities: root.visibilities
             panels: root.panels
             maxHeight: root.maxHeight
-
-            Component.onCompleted: root.contentHeight = implicitHeight
         }
     }
 }
