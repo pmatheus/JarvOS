@@ -55,6 +55,7 @@ Variants {
             name: "drawers"
             WlrLayershell.exclusionMode: ExclusionMode.Ignore
             WlrLayershell.keyboardFocus: visibilities.launcher || visibilities.session || panels.dashboard.needsKeyboard ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+            WlrLayershell.layer: visibilities.launcher || visibilities.session || visibilities.sidebar || visibilities.dashboard || visibilities.osd || visibilities.utilities || (panels?.popouts?.hasCurrent ?? false) || Notifs.popups.length > 0 ? WlrLayer.Top : WlrLayer.Bottom
 
             mask: Region {
                 x: Config.border.clampedThickness + win.dragMaskPadding

@@ -361,7 +361,10 @@ StyledRect {
                     color: root.modelData.urgency === NotificationUrgency.Critical ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurface
 
                     function onClicked() {
-                        root.expanded = !root.expanded;
+                        if (root.expanded)
+                            root.expanded = false;
+                        else
+                            root.modelData.popup = false;
                     }
                 }
 
@@ -371,7 +374,7 @@ StyledRect {
                     anchors.centerIn: parent
 
                     animate: true
-                    text: root.expanded ? "expand_less" : "expand_more"
+                    text: root.expanded ? "expand_less" : "close"
                     font.pointSize: Appearance.font.size.normal
                 }
             }
