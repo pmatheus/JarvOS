@@ -345,7 +345,7 @@ Scope {
 
                                                         delegate: Rectangle {
                                                             required property var modelData
-                                                            anchors.verticalCenter: parent.verticalCenter
+                                                            anchors.verticalCenter: parent ? parent.verticalCenter : undefined
                                                             color: "#2a2a3e"
                                                             radius: 4
                                                             width: modL.implicitWidth + 8
