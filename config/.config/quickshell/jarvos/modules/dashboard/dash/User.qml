@@ -6,6 +6,7 @@ import qs.services
 import qs.config
 import qs.utils
 import Quickshell
+import Quickshell.Io
 import QtQuick
 
 Row {
@@ -32,14 +33,23 @@ Row {
             fill: 1
             grade: 200
             font.pointSize: Math.floor(info.implicitHeight / 2) || 1
-            visible: pfp.status !== Image.Ready
+            visible: !faceProbe.exists || pfp.status !== Image.Ready
+        }
+
+        Process {
+            id: faceProbe
+            property bool exists: false
+            running: true
+            command: ["test", "-f", `${Paths.home}/.face`]
+            onExited: code => faceProbe.exists = (code === 0)
         }
 
         CachingImage {
             id: pfp
 
             anchors.fill: parent
-            path: `${Paths.home}/.face`
+            visible: faceProbe.exists
+            path: faceProbe.exists ? `${Paths.home}/.face` : ""
         }
 
         MouseArea {
