@@ -85,7 +85,6 @@ Switch {
                 width: height
                 height: parent.implicitHeight - Appearance.padding.small * 2
                 preferredRendererType: Shape.CurveRenderer
-                asynchronous: true
 
                 ShapePath {
                     strokeWidth: Appearance.font.size.larger * 0.15
