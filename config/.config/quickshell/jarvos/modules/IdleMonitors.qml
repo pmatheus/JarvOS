@@ -10,15 +10,13 @@ Scope {
     id: root
 
     readonly property bool enabled: !Config.general.idle.inhibitWhenAudio || !Players.list.some(p => p.isPlaying)
-    readonly property string lockScript: Quickshell.env("HOME") + "/.config/hypr/hyprland/scripts/jarvos-lock.sh"
-    readonly property string lockPath: Quickshell.env("HOME") + "/.config/quickshell/jarvos/lock-shell.qml"
 
     function lockNow(): void {
-        Quickshell.execDetached(["bash", "-c", root.lockScript]);
+        Quickshell.execDetached(["sh", "-c", "pidof hyprlock || hyprlock"]);
     }
 
     function unlockNow(): void {
-        Quickshell.execDetached(["qs", "ipc", "-p", root.lockPath, "call", "lock", "unlock"]);
+        Quickshell.execDetached(["pkill", "hyprlock"]);
     }
 
     function handleIdleAction(action: var): void {
