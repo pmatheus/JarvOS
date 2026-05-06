@@ -119,7 +119,7 @@ cd ~/JarvOS
 - **Picture-in-Picture** auto-positioning
 
 ### Extras
-- **Lock screen** (hyprlock) with blurred wallpaper, clock, and caps lock indicator
+- **Lock screen** (hyprlock — Aurora Glass theme) with blurred wallpaper, glass auth card, time-aware greeting, sysline + weather chips, capslock indicator
 - **SDDM theme** (Sugar Candy) for a polished login experience
 - **GRUB theme** (Particle) for boot screen aesthetics
 - **Fish shell** with Starship prompt, fzf, and zoxide
@@ -188,12 +188,14 @@ cd ~/JarvOS
 
 ## Shell stability
 
-The QuickShell shell runs under systemd (`quickshell-jarvos.service`) with
-auto-restart, the lock surface runs as a second QuickShell process
-(`quickshell-jarvos-lock.service`) so a bar crash cannot trap you on an
-unauthenticated session, and a pre-commit lint refuses any QML that puts
-`asynchronous: true` on a `Shape{}` (Qt's threaded shape renderer races
-`ShapePath` and segfaults).
+The QuickShell shell hosts the bar, drawers, dashboard, and notifications
+— nothing else. It runs under systemd (`quickshell-jarvos.service`) with
+auto-restart so a crash recovers in seconds without dropping the Hyprland
+session. The lock surface is **hyprlock**, not QuickShell — native C++,
+no QML, no upstream Caelestia coupling, can't be killed by a Qt regression
+or a mid-session `pacman -Syu`. A pre-commit lint refuses any QML that
+puts `asynchronous: true` on a `Shape{}` (Qt's threaded shape renderer
+races `ShapePath` and segfaults).
 
 Full contract, including the four hard rules and the switchover steps, is
 in [`docs/STABILITY.md`](docs/STABILITY.md).
