@@ -274,12 +274,28 @@ check_not_root
 step "Updating system..."
 sudo pacman -Syu --noconfirm
 
+lint_shell_invariants() {
+    step "Linting QuickShell Shape async invariant..."
+    local lint="$base/config/.config/quickshell/scripts/lint-shape-async.sh"
+    if [[ -x "$lint" ]]; then
+        if "$lint" "$base/config/.config/quickshell/jarvos"; then
+            ok "Shape async lint passed"
+        else
+            err "Shape async lint failed — refusing to install bad QML"
+            exit 1
+        fi
+    else
+        warn "lint-shape-async.sh missing or not executable; skipping"
+    fi
+}
+
 install_yay
 install_packages
 setup_python_environment
 setup_user_groups
 setup_services
 setup_desktop_settings
+lint_shell_invariants
 install_dotfiles
 setup_fish_plugins
 

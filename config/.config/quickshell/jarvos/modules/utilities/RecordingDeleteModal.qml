@@ -48,7 +48,6 @@ Loader {
 
                 anchors.fill: parent
                 preferredRendererType: Shape.CurveRenderer
-                asynchronous: true
 
                 ShapePath {
                     startX: -Config.border.rounding * 2

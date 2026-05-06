@@ -21,7 +21,6 @@ Shape {
     readonly property real gapAngle: ((spacing + strokeWidth) / (arcRadius || 1)) * (180 / Math.PI)
 
     preferredRendererType: Shape.CurveRenderer
-    asynchronous: true
 
     ShapePath {
         fillColor: "transparent"

@@ -186,6 +186,18 @@ cd ~/JarvOS
 | 3 fingers up | Toggle special workspace |
 | 3 fingers down | Toggle special workspace |
 
+## Shell stability
+
+The QuickShell shell runs under systemd (`quickshell-jarvos.service`) with
+auto-restart, the lock surface runs as a second QuickShell process
+(`quickshell-jarvos-lock.service`) so a bar crash cannot trap you on an
+unauthenticated session, and a pre-commit lint refuses any QML that puts
+`asynchronous: true` on a `Shape{}` (Qt's threaded shape renderer races
+`ShapePath` and segfaults).
+
+Full contract, including the four hard rules and the switchover steps, is
+in [`docs/STABILITY.md`](docs/STABILITY.md).
+
 ## Architecture
 
 ```

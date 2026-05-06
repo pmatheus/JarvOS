@@ -111,7 +111,6 @@ Item {
         anchors.fill: cover
         anchors.margins: -Config.dashboard.sizes.mediaVisualiserSize
 
-        asynchronous: true
         preferredRendererType: Shape.CurveRenderer
         data: visualiserBars.instances
     }

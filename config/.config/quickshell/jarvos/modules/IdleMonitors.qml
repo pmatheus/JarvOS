@@ -1,6 +1,5 @@
 pragma ComponentBehavior: Bound
 
-import "lock"
 import qs.config
 import qs.services
 import Caelestia.Internal
@@ -10,17 +9,26 @@ import Quickshell.Wayland
 Scope {
     id: root
 
-    required property Lock lock
     readonly property bool enabled: !Config.general.idle.inhibitWhenAudio || !Players.list.some(p => p.isPlaying)
+    readonly property string lockScript: Quickshell.env("HOME") + "/.config/hypr/hyprland/scripts/jarvos-lock.sh"
+    readonly property string lockPath: Quickshell.env("HOME") + "/.config/quickshell/jarvos/lock-shell.qml"
+
+    function lockNow(): void {
+        Quickshell.execDetached(["bash", "-c", root.lockScript]);
+    }
+
+    function unlockNow(): void {
+        Quickshell.execDetached(["qs", "ipc", "-p", root.lockPath, "call", "lock", "unlock"]);
+    }
 
     function handleIdleAction(action: var): void {
         if (!action)
             return;
 
         if (action === "lock")
-            lock.lock.locked = true;
+            root.lockNow();
         else if (action === "unlock")
-            lock.lock.locked = false;
+            root.unlockNow();
         else if (typeof action === "string")
             Hypr.dispatch(action);
         else
@@ -30,10 +38,10 @@ Scope {
     LogindManager {
         onAboutToSleep: {
             if (Config.general.idle.lockBeforeSleep)
-                root.lock.lock.locked = true;
+                root.lockNow();
         }
-        onLockRequested: root.lock.lock.locked = true
-        onUnlockRequested: root.lock.lock.unlock()
+        onLockRequested: root.lockNow()
+        onUnlockRequested: root.unlockNow()
     }
 
     Variants {
