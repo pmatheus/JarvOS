@@ -133,6 +133,14 @@ RowLayout {
                 }
             }
             DelegateChoice {
+                roleValue: "networkSpeed"
+                delegate: WrappedLoader {
+                    sourceComponent: NetworkSpeed {
+                        bar: root
+                    }
+                }
+            }
+            DelegateChoice {
                 roleValue: "activeWindow"
                 delegate: WrappedLoader {
                     Layout.fillHeight: true

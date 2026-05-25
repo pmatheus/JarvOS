@@ -32,6 +32,8 @@ StyledRect {
     color: Qt.alpha(Colours.tPalette.m3surfaceContainer, Colours.tPalette.m3surfaceContainer.a)
     radius: Appearance.rounding.full
 
+    // Internal/external IP change rarely; the external IP uses a network round-trip
+    // (curl), so keep it on a slow cadence.
     Timer {
         id: refreshTimer
         interval: 30000
@@ -39,10 +41,21 @@ StyledRect {
         repeat: true
         triggeredOnStart: true
         onTriggered: {
-            vpnCheckProc.running = true;
             internalIpProc.running = true;
             externalIpProc.running = true;
         }
+    }
+
+    // Tailscale state (connect/disconnect) must reflect quickly. `tailscale status`
+    // is a cheap local call, so poll it on a short cadence so toggling from the
+    // popout (or anywhere) updates the chip within a few seconds, not 30.
+    Timer {
+        id: vpnTimer
+        interval: 5000
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: vpnCheckProc.running = true
     }
 
     Process {

@@ -48,6 +48,10 @@ JsonObject {
             enabled: true
         },
         {
+            id: "networkSpeed",
+            enabled: true
+        },
+        {
             id: "statusIcons",
             enabled: true
         },
