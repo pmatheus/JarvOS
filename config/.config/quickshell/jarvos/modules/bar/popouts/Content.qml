@@ -126,6 +126,13 @@ Item {
             sourceComponent: LockStatus {}
         }
 
+        Popout {
+            name: "tailscale"
+            sourceComponent: Tailscale {
+                wrapper: root.wrapper
+            }
+        }
+
         Repeater {
             model: ScriptModel {
                 values: SystemTray.items.values.filter(i => !Config.bar.tray.hiddenIcons.includes(i.id))
@@ -169,8 +176,8 @@ Item {
         required property string name
         readonly property bool shouldBeActive: root.wrapper.currentName === name
 
-        anchors.verticalCenter: parent.verticalCenter
-        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.horizontalCenter: parent.horizontalCenter
 
         opacity: 0
         scale: 0.8

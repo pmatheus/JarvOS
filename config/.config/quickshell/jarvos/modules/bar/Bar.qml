@@ -127,7 +127,9 @@ RowLayout {
             DelegateChoice {
                 roleValue: "networkInfo"
                 delegate: WrappedLoader {
-                    sourceComponent: NetworkInfo {}
+                    sourceComponent: NetworkInfo {
+                        bar: root
+                    }
                 }
             }
             DelegateChoice {
