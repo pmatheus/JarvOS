@@ -133,6 +133,13 @@ Item {
             }
         }
 
+        Popout {
+            name: "networkSpeed"
+            sourceComponent: NetworkSpeed {
+                wrapper: root.wrapper
+            }
+        }
+
         Repeater {
             model: ScriptModel {
                 values: SystemTray.items.values.filter(i => !Config.bar.tray.hiddenIcons.includes(i.id))
