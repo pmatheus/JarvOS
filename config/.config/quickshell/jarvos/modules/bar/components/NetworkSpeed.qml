@@ -27,6 +27,14 @@ StyledRect {
         return `${v}${u}`;
     }
 
+    // Compact cumulative-total label (since shell start), e.g. "12.4G" / "340M".
+    function fmtTotal(bytes: real): string {
+        const f = NetworkUsage.formatBytesTotal(bytes);
+        const u = f.unit.charAt(0); // B / K / M / G
+        const v = f.value < 10 ? f.value.toFixed(1) : Math.round(f.value).toString();
+        return `${v}${u}`;
+    }
+
     implicitHeight: Config.bar.sizes.innerWidth
     implicitWidth: layout.implicitWidth + root.padding * 2
 
@@ -91,6 +99,59 @@ StyledRect {
             font.family: Appearance.font.family.mono
             color: root.colour
             opacity: 0.9
+        }
+
+        // Separator between live rates and cumulative totals
+        Rectangle {
+            Layout.alignment: Qt.AlignVCenter
+            width: 1
+            Layout.preferredHeight: layout.height * 0.5
+            color: root.colour
+            opacity: 0.2
+        }
+
+        // Total downloaded (since shell start)
+        MaterialIcon {
+            Layout.alignment: Qt.AlignVCenter
+            text: "swap_vert"
+            color: root.colour
+            opacity: 0.55
+            font.pointSize: Appearance.font.size.small
+        }
+
+        MaterialIcon {
+            Layout.alignment: Qt.AlignVCenter
+            text: "south"
+            color: root.downColour
+            opacity: 0.7
+            font.pointSize: Appearance.font.size.small
+        }
+
+        StyledText {
+            Layout.alignment: Qt.AlignVCenter
+            text: root.fmtTotal(NetworkUsage.downloadTotal)
+            font.pointSize: Appearance.font.size.smaller
+            font.family: Appearance.font.family.mono
+            color: root.colour
+            opacity: 0.75
+        }
+
+        // Total uploaded (since shell start)
+        MaterialIcon {
+            Layout.alignment: Qt.AlignVCenter
+            text: "north"
+            color: root.upColour
+            opacity: 0.7
+            font.pointSize: Appearance.font.size.small
+        }
+
+        StyledText {
+            Layout.alignment: Qt.AlignVCenter
+            text: root.fmtTotal(NetworkUsage.uploadTotal)
+            font.pointSize: Appearance.font.size.smaller
+            font.family: Appearance.font.family.mono
+            color: root.colour
+            opacity: 0.75
         }
     }
 
