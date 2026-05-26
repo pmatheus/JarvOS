@@ -46,6 +46,15 @@ StyledRect {
         service: NetworkUsage
     }
 
+    // Fixed width for the numeric labels so the chip size stays constant as
+    // values update. Sized to the widest compact label (e.g. "1023M").
+    TextMetrics {
+        id: labelMetrics
+        font.family: Appearance.font.family.mono
+        font.pointSize: Appearance.font.size.smaller
+        text: "8888M"
+    }
+
     RowLayout {
         id: layout
 
@@ -77,6 +86,8 @@ StyledRect {
 
         StyledText {
             Layout.alignment: Qt.AlignVCenter
+            Layout.preferredWidth: labelMetrics.width
+            horizontalAlignment: Text.AlignRight
             text: root.fmtRate(NetworkUsage.downloadSpeed)
             font.pointSize: Appearance.font.size.smaller
             font.family: Appearance.font.family.mono
@@ -94,6 +105,8 @@ StyledRect {
 
         StyledText {
             Layout.alignment: Qt.AlignVCenter
+            Layout.preferredWidth: labelMetrics.width
+            horizontalAlignment: Text.AlignRight
             text: root.fmtRate(NetworkUsage.uploadSpeed)
             font.pointSize: Appearance.font.size.smaller
             font.family: Appearance.font.family.mono
@@ -129,6 +142,8 @@ StyledRect {
 
         StyledText {
             Layout.alignment: Qt.AlignVCenter
+            Layout.preferredWidth: labelMetrics.width
+            horizontalAlignment: Text.AlignRight
             text: root.fmtTotal(NetworkUsage.downloadTotal)
             font.pointSize: Appearance.font.size.smaller
             font.family: Appearance.font.family.mono
@@ -147,6 +162,8 @@ StyledRect {
 
         StyledText {
             Layout.alignment: Qt.AlignVCenter
+            Layout.preferredWidth: labelMetrics.width
+            horizontalAlignment: Text.AlignRight
             text: root.fmtTotal(NetworkUsage.uploadTotal)
             font.pointSize: Appearance.font.size.smaller
             font.family: Appearance.font.family.mono
