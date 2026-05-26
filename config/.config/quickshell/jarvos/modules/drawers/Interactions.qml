@@ -40,6 +40,16 @@ CustomMouseArea {
         return y < Math.max(Config.border.minThickness, Config.border.thickness + panel.height) + panel.y && withinPanelWidth(panel, x, y);
     }
 
+    // Bar popouts render below the bar (offset by bar.implicitHeight, matching
+    // the input mask in Drawers.qml), so their bottom extent is
+    // bar.implicitHeight + panel.height — not the thickness-based bound that
+    // inTopPanel uses. Hit-test against the real bounds so the whole popout,
+    // including its bottom row, keeps it open.
+    function inPopoutBounds(panel: Item, x: real, y: real): bool {
+        const bottom = bar.implicitHeight + panel.y + panel.height + Config.border.rounding;
+        return y >= bar.implicitHeight && y <= bottom && withinPanelWidth(panel, x, y);
+    }
+
     function inBottomPanel(panel: Item, x: real, y: real, isCorner = false): bool {
         return y > height - Math.max(Config.border.minThickness, Config.border.thickness + panel.height) - (isCorner ? Config.border.rounding : 0) && withinPanelWidth(panel, x, y);
     }
@@ -218,7 +228,7 @@ CustomMouseArea {
         } else {
             const isTrayMenu = popouts.currentName.startsWith("traymenu");
             const hasSubMenu = isTrayMenu && (popouts.current?.depth > 1);
-            const inPopout = inTopPanel(panels.popouts, x, y) && !inNotificationArea(x, y);
+            const inPopout = inPopoutBounds(panels.popouts, x, y) && !inNotificationArea(x, y);
 
             if (popouts.hasCurrent && (!isTrayMenu || !hasSubMenu) && !inPopout) {
                 popouts.hasCurrent = false;
