@@ -5,6 +5,7 @@ import qs.components.misc
 import qs.services
 import qs.config
 import Caelestia.Internal
+import Quickshell
 import QtQuick
 import QtQuick.Layouts
 
@@ -158,7 +159,10 @@ Item {
                 radius: parent.radius
 
                 function onClicked(): void {
-                    root.wrapper.detach("network");
+                    // Full NetworkManager editor: add/edit/delete connections,
+                    // IP/DNS/routes/VPN.
+                    Quickshell.execDetached(["nm-connection-editor"]);
+                    root.wrapper.close();
                 }
             }
 
