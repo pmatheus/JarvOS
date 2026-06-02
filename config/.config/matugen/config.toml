@@ -9,9 +9,12 @@ output_path = '~/.local/state/quickshell/user/generated/colors.json'
 input_path = '~/.config/matugen/templates/hyprland/colors.conf'
 output_path = '~/.config/hypr/hyprland/colors.conf'
 
-[templates.hyprlock]
-input_path = '~/.config/matugen/templates/hyprland/hyprlock.conf'
-output_path = '~/.config/hypr/hyprlock.conf'
+# [templates.hyprlock] — disabled: the custom "Aurora Glass" hyprlock.conf is a
+# fixed curated theme owned by JarvOS, not matugen. Re-enabling this overwrites
+# ~/.config/hypr/hyprlock.conf with the plain template on every wallpaper change.
+# [templates.hyprlock]
+# input_path = '~/.config/matugen/templates/hyprland/hyprlock.conf'
+# output_path = '~/.config/hypr/hyprlock.conf'
 
 [templates.fuzzel]
 input_path = '~/.config/matugen/templates/fuzzel/fuzzel_theme.ini'
