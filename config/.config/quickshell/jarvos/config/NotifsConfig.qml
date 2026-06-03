@@ -3,6 +3,7 @@ import Quickshell.Io
 JsonObject {
     property bool expire: true
     property int defaultExpireTimeout: 5000
+    property int maxHistory: 100 // Cap retained notifications; oldest dropped beyond this (0 = unlimited)
     property real clearThreshold: 0.3
     property int expandThreshold: 20
     property bool actionOnClick: false

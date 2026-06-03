@@ -20,6 +20,15 @@ Singleton {
 
     property bool loaded
 
+    // Bound notification history so retained Notif objects (each with timers and
+    // an image loader) cannot grow without limit. Oldest are at the tail.
+    function trimHistory(): void {
+        const max = Config.notifs.maxHistory;
+        if (max > 0 && list.length > max)
+            for (const n of list.slice(max))
+                n.close();
+    }
+
     onDndChanged: {
         if (!Config.utilities.toasts.dndChanged)
             return;
@@ -82,6 +91,7 @@ Singleton {
                 notification: notif
             });
             root.list = [comp, ...root.list];
+            root.trimHistory();
         }
     }
 
@@ -94,6 +104,7 @@ Singleton {
             for (const notif of data)
                 root.list.push(notifComp.createObject(root, notif));
             root.list.sort((a, b) => b.time - a.time);
+            root.trimHistory();
             root.loaded = true;
         }
         onLoadFailed: err => {
