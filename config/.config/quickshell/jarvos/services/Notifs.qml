@@ -194,8 +194,8 @@ Singleton {
         property list<var> actions
 
         readonly property Timer timer: Timer {
-            running: true
-            interval: notif.expireTimeout > 0 ? notif.expireTimeout : Config.notifs.defaultExpireTimeout
+            running: notif.popup
+            interval: Config.notifs.defaultExpireTimeout
             onTriggered: {
                 if (Config.notifs.expire)
                     notif.popup = false;
