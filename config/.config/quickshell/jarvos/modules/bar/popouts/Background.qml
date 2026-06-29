@@ -17,7 +17,12 @@ ShapePath {
     property real sideRounding: startX > 0 ? -1 : 1
 
     strokeWidth: -1
-    fillColor: wrapper.width > 0 && wrapper.height > 0 ? Colours.palette.m3surface : "transparent"
+    // Gate the fill on the popout actually being open. A click-opened popout
+    // (e.g. network stats) closes via hasCurrent=false without resetting
+    // currentName, so the wrapper can keep a residual non-zero width/height and
+    // leave the m3surface fill drawn — the lingering ghost rectangle. Forcing the
+    // fill transparent the moment the popout is logically closed kills it.
+    fillColor: (wrapper.hasCurrent || wrapper.isDetached) && wrapper.width > 0 && wrapper.height > 0 ? Colours.palette.m3surface : "transparent"
 
     PathArc {
         relativeX: root.roundingX

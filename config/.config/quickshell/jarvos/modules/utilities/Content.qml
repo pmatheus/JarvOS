@@ -1,7 +1,7 @@
-import "cards"
-import qs.config
 import QtQuick
 import QtQuick.Layouts
+import "cards"
+import qs.config
 
 Item {
     id: root
@@ -19,7 +19,8 @@ Item {
         anchors.fill: parent
         spacing: Appearance.spacing.normal
 
-        IdleInhibit {}
+        IdleInhibit {
+        }
 
         Record {
             props: root.props
@@ -27,13 +28,20 @@ Item {
             z: 1
         }
 
+        Updates {
+            props: root.props
+            visibilities: root.visibilities
+        }
+
         Toggles {
             visibilities: root.visibilities
             popouts: root.popouts
         }
+
     }
 
     RecordingDeleteModal {
         props: root.props
     }
+
 }
