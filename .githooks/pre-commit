@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# JarvOS pre-commit gate. Enable once with:  git config core.hooksPath .githooks
+exec "$(git rev-parse --show-toplevel)/scripts/secret-scan.sh"

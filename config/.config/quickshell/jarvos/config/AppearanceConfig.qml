@@ -57,26 +57,34 @@ JsonObject {
     }
 
     component AnimCurves: JsonObject {
-        property list<real> emphasized: [0.05, 0, 2 / 15, 0.06, 1 / 6, 0.4, 5 / 24, 0.82, 0.25, 1, 1, 1]
-        property list<real> emphasizedAccel: [0.3, 0, 0.8, 0.15, 1, 1]
-        property list<real> emphasizedDecel: [0.05, 0.7, 0.1, 1, 1, 1]
-        property list<real> standard: [0.2, 0, 0, 1, 1, 1]
-        property list<real> standardAccel: [0.3, 0, 1, 1, 1, 1]
-        property list<real> standardDecel: [0, 0, 0, 1, 1, 1]
-        property list<real> expressiveFastSpatial: [0.42, 1.67, 0.21, 0.9, 1, 1]
-        property list<real> expressiveDefaultSpatial: [0.38, 1.21, 0.22, 1, 1, 1]
-        property list<real> expressiveEffects: [0.34, 0.8, 0.34, 1, 1, 1]
+        // Multi-segment emphasis: fast start, controlled settle
+        property list<real> emphasized: [0.05, 0, 0.12, 0.12, 0.16, 0.55, 0.20, 0.88, 0.25, 1, 1, 1]
+        // Quick launch — aggressive start
+        property list<real> emphasizedAccel: [0.25, 0, 0.7, 0.1, 1, 1]
+        // Strong decel — Apple-style fast start, gentle land
+        property list<real> emphasizedDecel: [0.05, 0.8, 0.08, 1, 1, 1]
+        // Smooth default — slightly faster than M3
+        property list<real> standard: [0.16, 0, 0, 1, 1, 1]
+        property list<real> standardAccel: [0.25, 0, 1, 1, 1, 1]
+        // Smooth decel — items rest gently
+        property list<real> standardDecel: [0, 0, 0.05, 1, 1, 1]
+        // Spatial: subtle overshoot (1.08) — snappy without wobble
+        property list<real> expressiveFastSpatial: [0.22, 1.08, 0.36, 1, 1, 1]
+        // Spatial default: barely perceptible overshoot (1.04) — energy without bounce
+        property list<real> expressiveDefaultSpatial: [0.20, 1.04, 0.36, 1, 1, 1]
+        // Effects: symmetric ease for opacity/color
+        property list<real> expressiveEffects: [0.25, 0.8, 0.25, 1, 1, 1]
     }
 
     component AnimDurations: JsonObject {
         property real scale: 1
-        property int small: 200 * scale
-        property int normal: 400 * scale
-        property int large: 600 * scale
-        property int extraLarge: 1000 * scale
-        property int expressiveFastSpatial: 350 * scale
-        property int expressiveDefaultSpatial: 500 * scale
-        property int expressiveEffects: 200 * scale
+        property int small: 130 * scale          // was 200 — micro-feedback
+        property int normal: 260 * scale          // was 400 — standard interactions
+        property int large: 380 * scale           // was 600 — significant transitions
+        property int extraLarge: 600 * scale      // was 1000 — choreographed sequences
+        property int expressiveFastSpatial: 220 * scale  // was 350 — quick spatial
+        property int expressiveDefaultSpatial: 300 * scale  // was 500 — primary spatial
+        property int expressiveEffects: 150 * scale      // was 200 — visual effects
     }
 
     component Anim: JsonObject {

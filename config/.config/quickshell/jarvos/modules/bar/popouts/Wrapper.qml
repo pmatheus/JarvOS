@@ -102,7 +102,7 @@ Item {
 
         shouldBeActive: root.hasCurrent && !root.detachedMode
         anchors.right: parent.right
-        anchors.verticalCenter: parent.verticalCenter
+        anchors.top: parent.top
 
         sourceComponent: Content {
             wrapper: root

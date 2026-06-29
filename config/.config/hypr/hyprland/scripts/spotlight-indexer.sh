@@ -8,7 +8,7 @@ TIMESTAMP_FILE="$CACHE_DIR/last-update"
 LOCK_FILE="$CACHE_DIR/indexer.lock"
 
 SEARCH_DIRS=("$HOME" "$HOME/Documents" "$HOME/Downloads" "$HOME/Desktop" "$HOME/work" "$HOME/Projects" "$HOME/Pictures" "$HOME/Music" "$HOME/Videos")
-EXCLUDE_DIRS=(.git node_modules .cache .local/share .mozilla .config/chromium .config/google-chrome __pycache__ .venv .env target build dist .next .nuxt)
+EXCLUDE_DIRS=(.git node_modules .cache .local/share .mozilla .config/chromium .config/google-chrome __pycache__ .venv .env target build dist .next .nuxt hd10tb fast-storage SSD2TB SSD4TB)
 MAX_DEPTH=5
 
 mkdir -p "$CACHE_DIR"

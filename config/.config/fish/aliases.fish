@@ -2,6 +2,7 @@
 ## Aliases
 alias zen zen-browser
 alias editor gnome-text-editor
+alias ag antigravity
 
 alias ls 'eza --icons --group-directories-first'
 alias tree 'eza --icons --tree --group-directories-first'

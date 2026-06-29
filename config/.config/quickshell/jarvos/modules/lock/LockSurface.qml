@@ -29,6 +29,32 @@ WlSessionLockSurface {
         id: unlockAnim
 
         ParallelAnimation {
+            // Content shrinks and fades fast — clear the stage
+            Anim {
+                target: content
+                property: "scale"
+                to: 0.85
+                duration: Appearance.anim.durations.small
+                easing.bezierCurve: Appearance.anim.curves.emphasizedAccel
+            }
+            Anim {
+                target: content
+                property: "opacity"
+                to: 0
+                duration: Appearance.anim.durations.small
+                easing.bezierCurve: Appearance.anim.curves.standardAccel
+            }
+            // Lock icon appears quickly
+            Anim {
+                target: lockIcon
+                property: "opacity"
+                to: 1
+                duration: Appearance.anim.durations.normal
+                easing.bezierCurve: Appearance.anim.curves.emphasizedDecel
+            }
+        }
+        // Then collapse everything together
+        ParallelAnimation {
             Anim {
                 target: lockContent
                 properties: "implicitWidth,implicitHeight"
@@ -40,41 +66,21 @@ WlSessionLockSurface {
                 target: lockBg
                 property: "radius"
                 to: lockContent.radius
+                duration: Appearance.anim.durations.expressiveFastSpatial
             }
             Anim {
-                target: content
-                property: "scale"
-                to: 0
-                duration: Appearance.anim.durations.expressiveDefaultSpatial
-                easing.bezierCurve: Appearance.anim.curves.expressiveDefaultSpatial
-            }
-            Anim {
-                target: content
+                target: lockContent
                 property: "opacity"
                 to: 0
-                duration: Appearance.anim.durations.small
-            }
-            Anim {
-                target: lockIcon
-                property: "opacity"
-                to: 1
-                duration: Appearance.anim.durations.large
+                duration: Appearance.anim.durations.normal
+                easing.bezierCurve: Appearance.anim.curves.standardAccel
             }
             Anim {
                 target: background
                 property: "opacity"
                 to: 0
                 duration: Appearance.anim.durations.large
-            }
-            SequentialAnimation {
-                PauseAnimation {
-                    duration: Appearance.anim.durations.small
-                }
-                Anim {
-                    target: lockContent
-                    property: "opacity"
-                    to: 0
-                }
+                easing.bezierCurve: Appearance.anim.curves.emphasizedDecel
             }
         }
         PropertyAction {
@@ -84,17 +90,23 @@ WlSessionLockSurface {
         }
     }
 
+    // Wait for screencopy to be ready before animating
+    Timer {
+        id: initDelay
+        interval: 50
+        running: true
+        onTriggered: {
+            // Show background instantly (no per-frame blur recalc during fade)
+            background.opacity = 1;
+            initAnim.start();
+        }
+    }
+
     ParallelAnimation {
         id: initAnim
 
-        running: true
+        running: false
 
-        Anim {
-            target: background
-            property: "opacity"
-            to: 1
-            duration: Appearance.anim.durations.large
-        }
         SequentialAnimation {
             ParallelAnimation {
                 Anim {
@@ -171,7 +183,7 @@ WlSessionLockSurface {
             autoPaddingEnabled: false
             blurEnabled: true
             blur: 1
-            blurMax: 64
+            blurMax: 32
             blurMultiplier: 1
         }
     }

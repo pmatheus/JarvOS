@@ -73,6 +73,17 @@ Scope {
     }
 
     CustomShortcut {
+        name: "osd"
+        description: "Toggle OSD (volume/brightness)"
+        onPressed: {
+            if (root.hasFullscreen)
+                return;
+            const visibilities = Visibilities.getForActive();
+            visibilities.osd = !visibilities.osd;
+        }
+    }
+
+    CustomShortcut {
         name: "utilities"
         description: "Toggle utilities"
         onPressed: {

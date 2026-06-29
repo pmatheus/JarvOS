@@ -61,7 +61,7 @@ Item {
             Anim {
                 target: root
                 property: "implicitHeight"
-                duration: Appearance.anim.durations.expressiveDefaultSpatial
+                duration: Appearance.anim.durations.expressiveFastSpatial
                 easing.bezierCurve: Appearance.anim.curves.expressiveDefaultSpatial
             }
         },
@@ -72,6 +72,7 @@ Item {
             Anim {
                 target: root
                 property: "implicitHeight"
+                duration: Appearance.anim.durations.expressiveDefaultSpatial
                 easing.bezierCurve: Appearance.anim.curves.emphasized
             }
         }

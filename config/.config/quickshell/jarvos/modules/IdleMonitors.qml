@@ -12,7 +12,7 @@ Scope {
     readonly property bool enabled: !Config.general.idle.inhibitWhenAudio || !Players.list.some(p => p.isPlaying)
 
     function lockNow(): void {
-        Quickshell.execDetached(["sh", "-c", "pidof hyprlock || hyprlock"]);
+        Quickshell.execDetached(["sh", "-c", "pidof hyprlock || ~/.config/hypr/hyprlock/lock.sh"]);
     }
 
     function unlockNow(): void {
