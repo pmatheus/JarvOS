@@ -1,0 +1,30 @@
+# JarvOS — services bootstrap.sh enables. Format: "scope service [tier]"
+#   scope = system | user
+#   tier  = core (default) | optional (only with --full-services)
+# Personal/private services (clawmem, spotlight indexers, abin-txt-checker)
+# are intentionally NOT shipped.
+
+# --- core desktop ---
+system NetworkManager.service core
+system bluetooth.service core
+system sddm.service core
+system systemd-timesyncd.service core
+user pipewire.socket core
+user pipewire-pulse.socket core
+user wireplumber.service core
+user ydotool.service core
+user xdg-user-dirs.service core
+user gnome-keyring-daemon.socket core
+
+# --- JarvOS shell helpers ---
+user jarvos-monitor-layout.path core
+
+# --- optional (hardware / virt / remote / snapshots) ---
+system docker.service optional
+system libvirtd.service optional
+system openrgb.service optional
+system sshd.service optional
+system tailscaled.service optional
+system grub-btrfsd.service optional
+system snapper-timeline.timer optional
+system snapper-cleanup.timer optional

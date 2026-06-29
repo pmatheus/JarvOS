@@ -1,0 +1,42 @@
+# JarvOS — optional security / RE / pentest toolkit (AUR).
+# Installed with `bootstrap.sh --security`. All publicly-available tools.
+# NOTE: forticlient and powershell are proprietary (free download); installed
+# only on explicit request.
+
+# Recon / web
+feroxbuster
+ffuf
+whatweb
+onesixtyone-git
+wscat
+
+# AD / network
+netexec
+responder
+kerbrute-bin
+pre2k-git
+targetedkerberoast-git
+python-bloodhound-ce-git
+ligolo
+gnu-netcat
+
+# Reversing / forensics
+binaryninja-free
+retdec-bin
+android-apktool-bin
+dex2jar
+steghide
+stegseek
+scalpel-git
+rifiuti2
+pngcheck
+
+# Wordlists
+seclists
+rockyou
+cupp-git
+
+# Runtimes used by the above
+powershell-bin
+forticlient
+vagrant

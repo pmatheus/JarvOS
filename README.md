@@ -76,6 +76,43 @@ cd ~/JarvOS
 ./install.sh --minimal  # Skip GRUB/SDDM (if you already have those)
 ```
 
+### Full-system bootstrap (bare Arch → this exact box)
+
+`install.sh` sets up the desktop on top of an existing system. `bootstrap.sh`
+reproduces the **whole box** — packages, services, groups, and desktop — from a
+clean Arch install:
+
+```bash
+git clone https://github.com/pmatheus/JarvOS.git ~/JarvOS && cd ~/JarvOS
+./bootstrap.sh              # core desktop only (the beautiful OS)
+./bootstrap.sh --apps       # + browsers / editors / media
+./bootstrap.sh --security   # + security/RE toolkit (public tools)
+./bootstrap.sh --full       # everything + optional services (docker/virt/...)
+```
+
+What it installs is declared, not magic — review/edit before running:
+
+| File | Contents |
+|------|----------|
+| `dependencies.txt` | core repo packages |
+| `system/packages/aur-core.txt` | AUR packages for the desktop |
+| `system/packages/aur-apps.txt` | optional apps (`--apps`) |
+| `system/packages/aur-security.txt` | security toolkit (`--security`) |
+| `system/packages/*-full.txt` | complete snapshot of the reference box |
+| `system/services/enable.txt` | services to enable (core vs optional) |
+
+After bootstrap, edit `~/.config/hypr/hyprland/monitors.conf` for your displays.
+
+**Keeping the snapshot current:** after changing the live box, run
+`scripts/capture-system.sh` to refresh the package/service snapshots and report
+dotfile drift, then review `git diff` and commit.
+
+**Privacy / safety:** this repo ships **zero secrets** — no keys, tokens,
+history, or private agent config. `scripts/secret-scan.sh` runs as a
+`pre-commit` hook (`git config core.hooksPath .githooks`) and blocks any commit
+containing secret-shaped strings. Per-host files (`monitors.conf`, matugen
+`colors.conf`) are git-ignored and generated on install.
+
 ### Requirements
 - Arch Linux or Arch-based distribution (EndeavourOS, CachyOS, etc.)
 - UEFI system (for GRUB theme)

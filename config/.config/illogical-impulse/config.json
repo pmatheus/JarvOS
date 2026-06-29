@@ -3,7 +3,7 @@
         "extraBackgroundTint": true,
         "fakeScreenRounding": 1,
         "palette": {
-            "type": "scheme-tonal-spot"
+            "type": "scheme-expressive"
         },
         "transparency": {
             "automatic": true,
@@ -52,11 +52,11 @@
                 "enable": true
             }
         },
-        "borderless": false,
+        "borderless": true,
         "bottom": false,
         "cornerStyle": 1,
-        "multiMonitorMode": false,
-        "primaryMonitor": "HDMI-A-1",
+        "multiMonitorMode": true,
+        "primaryMonitor": "DP-2",
         "resources": {
             "alwaysShowCpu": false,
             "alwaysShowSwap": true
@@ -73,12 +73,12 @@
             "monochromeIcons": true
         },
         "utilButtons": {
-            "showColorPicker": false,
+            "showColorPicker": true,
             "showDarkModeToggle": false,
             "showKeyboardToggle": false,
-            "showMicToggle": false,
+            "showMicToggle": true,
             "showPerformanceProfileToggle": false,
-            "showScreenSnip": false
+            "showScreenSnip": true
         },
         "verbose": true,
         "weather": {
@@ -198,7 +198,7 @@
         }
     },
     "windows": {
-        "centerTitle": true,
+        "centerTitle": false,
         "showTitlebar": false
     }
 }

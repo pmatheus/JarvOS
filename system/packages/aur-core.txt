@@ -1,0 +1,42 @@
+# JarvOS — AUR packages for the core desktop (the "beautiful OS").
+# Installed by bootstrap.sh by default. One package per line, '#' comments ignored.
+
+# Shell / compositor stack
+caelestia-shell
+caelestia-cli
+quickshell-git
+grimblast-git
+wlogout
+app2unit
+
+# Material You theming engine
+matugen-bin
+kde-material-you-colors
+python-materialyoucolor
+python-pywal16
+python-bs4
+
+# GTK / Qt theming + tray glue
+adw-gtk-theme-git
+qt6gtk2
+qt6-avif-image-plugin
+gtk-sharp-2
+gtk2
+libappindicator-gtk2
+libdbusmenu-gtk2
+nautilus-open-any-terminal
+
+# Audio visualiser lib (cava)
+libcava
+
+# Cursor theme
+bibata-cursor-theme-bin
+
+# Fonts used by the shell + theme
+ttf-gabarito-git
+ttf-readex-pro
+ttf-google-fonts-typewolf
+ttf-material-symbols-variable-git
+
+# AUR helper (bootstraps itself; listed for completeness)
+yay-bin

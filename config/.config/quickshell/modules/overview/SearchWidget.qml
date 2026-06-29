@@ -194,6 +194,8 @@ Item { // Wrapper
 
             // clip: true
             layer.enabled: true
+            layer.smooth: true
+            layer.samples: 4
             layer.effect: OpacityMask {
                 maskSource: Rectangle {
                     width: searchWidgetContent.width
@@ -218,7 +220,7 @@ Item { // Wrapper
                     focus: GlobalStates.overviewOpen
                     Layout.rightMargin: 15
                     padding: 15
-                    renderType: Text.QtRendering
+                    renderType: Text.NativeRendering
                     font {
                         family: Appearance?.font.family.main ?? "sans-serif"
                         pixelSize: Appearance?.font.pixelSize.larger ?? 19

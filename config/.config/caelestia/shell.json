@@ -15,7 +15,7 @@
     }
   },
   "general": {
-    "logo": "arch",
+    "logo": "~/.config/quickshell/assets/icons/arch-symbolic.svg",
     "apps": {
       "terminal": [
         "kitty",
@@ -87,7 +87,7 @@
     ],
     "popouts": {
       "activeWindow": true,
-      "statusIcons": true,
+      "statusIcons": false,
       "tray": true
     },
     "scrollActions": {
@@ -103,22 +103,22 @@
       "occupiedBg": true
     },
     "status": {
-      "showAudio": true,
+      "showAudio": false,
       "showBattery": false,
-      "showBluetooth": true,
-      "showNetwork": true,
-      "showWifi": true,
-      "showMicrophone": true,
-      "showLockStatus": true
+      "showBluetooth": false,
+      "showNetwork": false,
+      "showWifi": false,
+      "showMicrophone": false,
+      "showLockStatus": false
     }
   },
   "border": {
     "rounding": 15,
-    "thickness": 5
+    "thickness": 2
   },
   "dashboard": {
     "enabled": true,
-    "showOnHover": true
+    "showOnHover": false
   },
   "launcher": {
     "maxShown": 7,
@@ -195,7 +195,7 @@
     ]
   },
   "notifs": {
-    "expire": false,
+    "expire": true,
     "defaultExpireTimeout": 5000
   },
   "osd": {

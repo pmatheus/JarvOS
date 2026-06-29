@@ -1,0 +1,39 @@
+# ── Machine-specific (generated per host by the installer) ───────────────
+config/.config/hypr/hyprland/monitors.conf
+config/.config/hypr/hyprland/custom/monitors.conf
+config/.config/hypr/hyprland/colors.conf
+config/.config/hypr/hyprland/scheme/
+system/groups.txt
+
+# ── Editor / build / backup churn ────────────────────────────────────────
+**/node_modules/
+**/bun.lock
+**/*.bak
+**/*.bak-*
+**/*.broken-*
+**/*.matugen-plain-*
+**/*.pre-aurora-*
+**/__pycache__/
+*.log
+*.tmp
+
+# ── Personal infra that must never ship in the public OS ─────────────────
+config/.config/hypr/hyprland/scripts/spotlight-es.sh
+config/.config/hypr/hyprland/scripts/spotlight-es-indexer.ts
+config/.config/hypr/hyprland/scripts/rdp-lab.sh
+config/.config/hypr/hyprland/scripts/package.json
+config/.config/hypr/hyprland.bak-*/
+
+# ── Secret-shaped files (defense in depth; never commit real secrets) ────
+*.env
+.env*
+!*.env.example
+!*.env.template
+*.pem
+*.key
+*_rsa
+*_ed25519
+id_*
+*.kdbx
+secrets*.json
+**/.secrets/

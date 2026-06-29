@@ -1,0 +1,12 @@
+# JarvOS — optional desktop applications (AUR).
+# Installed with `bootstrap.sh --apps`. Nice defaults, not required for the DE.
+
+# Browsers
+brave-bin
+google-chrome
+zen-browser-bin
+
+# Media / chat / editors
+spotify
+ferdium-bin
+visual-studio-code-bin
