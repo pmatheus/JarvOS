@@ -129,7 +129,7 @@ setup_user_groups() {
 
 setup_services() {
     step "Enabling services..."
-    systemctl --user enable ydotool --now 2>/dev/null || true
+    systemctl --user enable ydotool --now 2>/dev/null || sudo systemctl --global enable ydotool 2>/dev/null || true
     sudo systemctl enable bluetooth --now 2>/dev/null || true
 
     # OpenRGB

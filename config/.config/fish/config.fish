@@ -26,7 +26,7 @@ fish_add_path -g ~/.local/share/gem/ruby/3.4.0/bin
 fish_add_path -g ~/google-cloud-sdk/bin
 
 # ezpz - Pentest enumeration toolkit
-set -gx EZPZ_HOME /home/user/ezpz
+set -gx EZPZ_HOME $HOME/ezpz
 set -gx fish_function_path "$EZPZ_HOME/functions" $fish_function_path
 
 # Aliases
