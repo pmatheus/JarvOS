@@ -36,6 +36,7 @@ chntpw
 chromium
 clang
 claude-code
+claude-desktop
 cliphist
 cmake
 cpanminus
@@ -286,6 +287,8 @@ sqlmap
 sshpass
 sshuttle
 starship
+steghide
+stegseek
 stow
 sushi
 swappy

@@ -8,6 +8,7 @@ brave-bin
 caelestia-cli
 caelestia-shell
 claude-code
+claude-desktop
 cupp-git
 dex2jar
 electron37
@@ -53,6 +54,8 @@ rockyou
 scalpel-git
 seclists
 spotify
+steghide
+stegseek
 targetedkerberoast-git
 ttf-gabarito-git
 ttf-google-fonts-typewolf
