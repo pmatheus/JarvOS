@@ -6,6 +6,7 @@
 #
 # Usage:
 #   ./bootstrap.sh                 # core desktop only (the beautiful OS)
+#   ./bootstrap.sh --core          # same as no flags (explicit)
 #   ./bootstrap.sh --apps          # + browsers/editors/media
 #   ./bootstrap.sh --security      # + security/RE toolkit (public tools)
 #   ./bootstrap.sh --full          # = --apps --security + optional services
@@ -22,13 +23,21 @@ step(){ echo -e "${BLUE}[bootstrap] $1${NC}"; }
 ok(){ echo -e "${GREEN}[bootstrap] ✓ $1${NC}"; }
 warn(){ echo -e "${YELLOW}[bootstrap] ⚠ $1${NC}"; }
 
+# In arch-chroot there is no user manager: `systemctl --user` cannot connect.
+# Fall back to --global (enables for all users; same effect for a fresh box).
+enable_user_unit(){
+    if systemctl --user enable "$1" 2>/dev/null; then return 0; fi
+    sudo systemctl --global enable "$1"
+}
+
 APPS=false; SECURITY=false; FULL_SERVICES=false
 for a in "$@"; do case "$a" in
+    --core) ;;
     --apps) APPS=true;;
     --security) SECURITY=true;;
     --full-services) FULL_SERVICES=true;;
     --full) APPS=true; SECURITY=true; FULL_SERVICES=true;;
-    --help|-h) sed -n '2,18p' "$0" | sed 's/^# \?//'; exit 0;;
+    --help|-h) sed -n '2,19p' "$0" | sed 's/^# \?//'; exit 0;;
     *) warn "unknown flag: $a";;
 esac; done
 
@@ -61,11 +70,22 @@ if $SECURITY; then
     pkglist system/packages/aur-security.txt | while read -r p; do
         yay -S --needed --noconfirm "$p" || warn "skip $p"
     done
+    for r in chsoares/ezpz chsoares/ctf.fish; do
+        d="${JARVOS_HOME:-$HOME}/${r#*/}"
+        [[ -d "$d/.git" ]] || git clone --depth 1 "https://github.com/$r.git" "$d" || warn "clone $r failed"
+    done
+    ok "ezpz + ctf.fish (chsoares) in ${JARVOS_HOME:-$HOME}"
 fi
 
 # 3. desktop layer (configs, venv, themes, base groups/services) ---------
 step "running desktop installer (install.sh)…"
 bash install.sh "$@" || warn "install.sh reported issues; continuing"
+
+# 3b. hypr-box — the AI control layer (JarvOS is "AI-native")
+step "installing hypr-box (uv tool)…"
+# hypr-box is a submodule: a plain `git clone` of JarvOS leaves it empty.
+git -C "$base" submodule update --init --recursive hypr-box 2>/dev/null || true
+uv tool install --force "$base/hypr-box" && ok "hypr-box installed" || warn "hypr-box install failed"
 
 # 4. per-host monitors.conf from template --------------------------------
 mon="$HOME/.config/hypr/hyprland/monitors.conf"
@@ -82,7 +102,7 @@ while read -r scope unit tier; do
     if [[ "$scope" == system ]]; then
         sudo systemctl enable "$unit" 2>/dev/null && ok "system: $unit" || warn "skip $unit"
     else
-        systemctl --user enable "$unit" 2>/dev/null && ok "user: $unit" || warn "skip $unit"
+        enable_user_unit "$unit" 2>/dev/null && ok "user: $unit" || warn "skip $unit"
     fi
 done < system/services/enable.txt
 
