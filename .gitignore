@@ -37,3 +37,5 @@ id_*
 *.kdbx
 secrets*.json
 **/.secrets/
+.superpowers/
+.playwright-cli/

@@ -8,8 +8,7 @@ StartLimitBurst=5
 [Service]
 Type=simple
 ExecStart=/usr/bin/qs -c caelestia
-Restart=on-failure
-RestartSec=2
+Restart=no
 
 [Install]
 WantedBy=graphical-session.target
