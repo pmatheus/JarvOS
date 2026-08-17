@@ -1,15 +1,12 @@
 abin-txt-checker.service
-clawmem-embed.timer
 clawmem-watcher.service
 gnome-keyring-daemon.socket
 jarvos-monitor-layout.path
-jarvos-spotlight-indexer.service
 p11-kit-server.socket
 pipewire-pulse.service
 pipewire-pulse.socket
 pipewire.socket
 speech-dispatcher.socket
-spotlight-indexer.service
 wireplumber.service
 xdg-user-dirs.service
 ydotool.service

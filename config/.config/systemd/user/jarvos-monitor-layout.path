@@ -1,0 +1,13 @@
+[Unit]
+Description=JarvOS: watch for Hyprland IPC, then enforce monitor order
+
+[Path]
+# Edge-triggered: fires when the Hyprland runtime dir changes, i.e. when a new
+# instance signature dir is created at Hyprland startup (and on re-login while
+# the user manager lingers). Edge-triggering avoids the retrigger loop that a
+# level-triggered PathExists* spec causes with a fast oneshot service.
+PathModified=%t/hypr
+Unit=jarvos-monitor-layout.service
+
+[Install]
+WantedBy=default.target

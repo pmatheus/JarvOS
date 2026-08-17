@@ -1,0 +1,11 @@
+[Unit]
+ConditionPathExists=%h/.local/bin/jarvos-monitor-layout
+Description=JarvOS: enforce physical monitor order (DP-1|DP-2|DP-3 = left|center|right)
+Documentation=file:%h/.local/bin/jarvos-monitor-layout
+# Generous burst headroom; the script is idempotent, so extra triggers are harmless.
+StartLimitIntervalSec=30
+StartLimitBurst=15
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/jarvos-monitor-layout

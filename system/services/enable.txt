@@ -17,6 +17,7 @@ user xdg-user-dirs.service core
 user gnome-keyring-daemon.socket core
 
 # --- JarvOS shell helpers ---
+user quickshell-jarvos.service core
 user jarvos-monitor-layout.path core
 
 # --- optional (hardware / virt / remote / snapshots) ---

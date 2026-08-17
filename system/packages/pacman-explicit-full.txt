@@ -7,6 +7,8 @@ ant
 antigravity
 apostrophe
 app2unit
+archinstall
+archiso
 aria2
 aubio
 aws-cli-v2
@@ -158,10 +160,13 @@ lib32-glibc
 libcava
 liberica-jdk-11-full-bin
 libguestfs
+libpff-git
+libpst
 libpulse
 libreoffice-fresh
 libva-nvidia-driver
 libvoikko
+libvshadow-git
 ligolo
 linux
 linux-firmware
@@ -197,6 +202,7 @@ openrgb
 openvpn
 orca
 pacman-contrib
+papirus-icon-theme
 patchelf
 pavucontrol-qt
 perl-image-exiftool
@@ -242,6 +248,7 @@ qt6gtk2
 quickshell-git
 radare2
 rclone
+reflector
 responder
 retdec-bin
 rifiuti2
@@ -259,11 +266,13 @@ rygel
 rz-cutter
 rz-ghidra
 sagemath
+samba
 sassc
 satty
 scalpel-git
 sddm
 seclists
+shellcheck
 simple-scan
 slurp
 smartmontools
@@ -277,8 +286,6 @@ sqlmap
 sshpass
 sshuttle
 starship
-steghide
-stegseek
 stow
 sushi
 swappy
@@ -319,6 +326,7 @@ upx
 uv
 vagrant
 vim
+virt-install
 virtualbox
 visual-studio-code-bin
 vlc
