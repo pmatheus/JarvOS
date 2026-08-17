@@ -149,6 +149,21 @@ EOF
     mv "$RESTORE_SCRIPT.tmp" "$RESTORE_SCRIPT"
 }
 
+sync_caelestia_scheme() {
+    # The JarvOS bar (Colours.qml) reads ~/.local/state/caelestia/scheme.json,
+    # which this legacy matugen pipeline never writes. Without this, wallpaper
+    # changes made via switchwall.sh never reach the QuickShell bar.
+    local img="$1"
+    command -v caelestia &>/dev/null || return
+    [[ -n "$img" && -f "$img" ]] || return
+    local caelestia_state="${XDG_STATE_HOME:-$HOME/.local/state}/caelestia"
+    local scheme_json
+    scheme_json=$(caelestia wallpaper -p "$img" 2>/dev/null)
+    [[ -n "$scheme_json" ]] || return
+    mkdir -p "$caelestia_state"
+    printf '%s' "$scheme_json" > "$caelestia_state/scheme.json"
+}
+
 copy_wallpaper_to_sddm() {
     local wallpaper_path="$1"
     local sddm_bg_path="/usr/share/sddm/themes/sugar-candy/Backgrounds/bg.jpg"
@@ -286,6 +301,7 @@ switch() {
     
     # Apply colors immediately after generation
     "$SCRIPT_DIR"/applycolor.sh
+    sync_caelestia_scheme "$imgpath" &
     deactivate
 
     # Notify user about the color/palette change
