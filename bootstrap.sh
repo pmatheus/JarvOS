@@ -27,7 +27,7 @@ warn(){ echo -e "${YELLOW}[bootstrap] ⚠ $1${NC}"; }
 # Fall back to --global (enables for all users; same effect for a fresh box).
 enable_user_unit(){
     if systemctl --user enable "$1" 2>/dev/null; then return 0; fi
-    sudo systemctl --global enable "$1"
+    sudo -n systemctl --global enable "$1"
 }
 
 APPS=false; SECURITY=false; FULL_SERVICES=false
@@ -70,11 +70,17 @@ if $SECURITY; then
     pkglist system/packages/aur-security.txt | while read -r p; do
         yay -S --needed --noconfirm "$p" || warn "skip $p"
     done
+    clone_failed=false
     for r in chsoares/ezpz chsoares/ctf.fish; do
         d="${JARVOS_HOME:-$HOME}/${r#*/}"
-        [[ -d "$d/.git" ]] || git clone --depth 1 "https://github.com/$r.git" "$d" || warn "clone $r failed"
+        [[ -d "$d/.git" ]] || git clone --depth 1 "https://github.com/$r.git" "$d" \
+            || { warn "clone $r failed"; clone_failed=true; }
     done
-    ok "ezpz + ctf.fish (chsoares) in ${JARVOS_HOME:-$HOME}"
+    if $clone_failed; then
+        warn "ezpz/ctf.fish incomplete in ${JARVOS_HOME:-$HOME} — see clone errors above"
+    else
+        ok "ezpz + ctf.fish (chsoares) in ${JARVOS_HOME:-$HOME}"
+    fi
 fi
 
 # 3. desktop layer (configs, venv, themes, base groups/services) ---------
@@ -84,7 +90,7 @@ bash install.sh "$@" || warn "install.sh reported issues; continuing"
 # 3b. hypr-box — the AI control layer (JarvOS is "AI-native")
 step "installing hypr-box (uv tool)…"
 # hypr-box is a submodule: a plain `git clone` of JarvOS leaves it empty.
-git -C "$base" submodule update --init --recursive hypr-box 2>/dev/null || true
+git -C "$base" submodule update --init --recursive hypr-box || true
 uv tool install --force "$base/hypr-box" && ok "hypr-box installed" || warn "hypr-box install failed"
 
 # 4. per-host monitors.conf from template --------------------------------
