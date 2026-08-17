@@ -27,7 +27,7 @@ JarvOS is an Arch Linux dotfiles repository for a desktop environment using:
 ### QuickShell — JarvOS Shell (ACTIVE)
 
 **Entry:** `config/.config/quickshell/jarvos/shell.qml`
-**Launched by:** `qs -p ~/.config/quickshell/jarvos/shell.qml` (in `execs.conf`)
+**Launched by:** `quickshell-jarvos.service` (`qs -c caelestia`), started from `execs.conf`
 
 The JarvOS shell is built on the Caelestia design system. The `caelestia:` namespace
 in keybinds is a protocol name, not a separate shell.
@@ -65,11 +65,13 @@ StyledText, MaterialIcon, controls/, containers/, effects/.
 **Config** (in `jarvos/config/`): Centralized config singletons — Config.qml loads
 Appearance, Bar, Launcher, Dashboard, Lock, OSD, Sidebar, etc.
 
-### Legacy Caelestia Shell (DEPRECATED — do not modify)
+### Config name `caelestia`
 
-`config/.config/quickshell/shell.qml` and `config/.config/quickshell/modules/` contain
-the old Caelestia shell with 19 lazy-loaded modules. This is **not running** and exists
-only as reference. All new work goes in `jarvos/`.
+`config/.config/quickshell/caelestia` is a symlink to `jarvos/` so `caelestia-cli`
+(`caelestia shell …`, hardwired to `qs -c caelestia`) drives our fork. The old
+root-level shell (`shell.qml`, `modules/`, `services/`) was removed 2026-08-17: while
+`~/.config/quickshell/shell.qml` exists, quickshell registers it as `default` and
+ignores every subdirectory, which broke `-c` name resolution.
 
 ### Installer
 `install.sh` handles:

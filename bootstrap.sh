@@ -122,5 +122,5 @@ done
 echo
 ok "JarvOS bootstrap complete."
 echo -e "${YELLOW}Next: log out and pick the Hyprland session in SDDM, or run:${NC}"
-echo "  qs -p ~/.config/quickshell/jarvos/shell.qml"
+echo "  systemctl --user start quickshell-jarvos.service   # or: qs -c caelestia"
 echo -e "${YELLOW}Edit ~/.config/hypr/hyprland/monitors.conf for your display layout.${NC}"

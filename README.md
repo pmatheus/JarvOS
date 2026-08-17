@@ -289,7 +289,7 @@ monitor = DP-1, 2560x1440@144, 0x0, 1
 monitor = HDMI-A-1, 1920x1080@60, 2560x0, 1
 ```
 
-**Toggle QuickShell modules:** Edit `~/.config/quickshell/shell.qml` — set any `enable*` property to `false`.
+**Restart the shell:** `systemctl --user restart quickshell-jarvos.service` (Super+Ctrl+Alt+R).
 
 ## Credits
 

@@ -10,8 +10,10 @@ NetworkManager-dispatcher.service
 NetworkManager.service
 NetworkManager-wait-online.service
 openrgb.service
+reflector.timer
 remote-fs.target
 sddm.service
+smb.service
 snapper-cleanup.timer
 snapper-timeline.timer
 sshd.service

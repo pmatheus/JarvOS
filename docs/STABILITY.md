@@ -57,7 +57,7 @@ The exec-once line in `execs.conf` is already replaced. To finish the
 switchover without a logout:
 
 ```sh
-pkill -f 'qs -p .*jarvos/shell.qml' || true
+pkill -x qs || true
 systemctl --user enable --now quickshell-jarvos.service
 ```
 
