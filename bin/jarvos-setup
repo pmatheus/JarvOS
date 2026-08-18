@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# jarvos-setup — open the "JarvOS Setup" panel in the running JarvOS shell.
+#
+#   jarvos-setup              open it now
+#   jarvos-setup --first-run  open it only on a fresh install, once the shell is up
+#
+# The panel itself also opens on its own at first login; both paths go through
+# the same idempotent IPC call, so running this twice never gives two windows.
+
+set -uo pipefail
+
+CONFIG=${JARVOS_SHELL_CONFIG:-caelestia}
+PENDING=${JARVOS_FIRST_RUN_MARKER:-/var/lib/jarvos/first-run-pending}
+DONE="${XDG_STATE_HOME:-$HOME/.local/state}/jarvos/first-run-done"
+
+case "${1:-}" in
+--first-run)
+    [ -e "$PENDING" ] || exit 0
+    [ -e "$DONE" ] && exit 0
+    ;;
+-h | --help)
+    sed -n '2,7p' "$0"
+    exit 0
+    ;;
+esac
+
+# At login the shell may still be starting; wait for its IPC socket.
+for _ in $(seq 60); do
+    qs -c "$CONFIG" ipc call setup isOpen >/dev/null 2>&1 && break
+    sleep 1
+done
+
+if ! qs -c "$CONFIG" ipc call setup open; then
+    echo "jarvos-setup: the JarvOS shell (qs -c $CONFIG) is not answering" >&2
+    exit 1
+fi

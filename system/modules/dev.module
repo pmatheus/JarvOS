@@ -1,0 +1,79 @@
+# JarvOS module — development stack.
+#
+# Grounded in `pacman -Qqe` on the JarvOS reference box: containers, VMs, the
+# language toolchains actually in use, and the two language servers the box
+# really runs (gopls, rust-analyzer — here as packages rather than `go install`
+# / `cargo install`, which is what the box did by hand).
+
+name: Dev stack
+description: Containers, VMs, language toolchains and language servers.
+icon: terminal
+size_estimate: ~5 GiB
+default: false
+
+[packages]
+# Containers
+docker
+docker-compose
+docker-buildx
+
+# Virtualisation
+libvirt
+qemu-desktop
+virt-install
+libguestfs
+swtpm
+dnsmasq
+
+# Packaging and build
+devtools
+base-devel
+cmake
+meson
+ninja
+clang
+mingw-w64-gcc
+patchelf
+dkms
+linux-headers
+gobject-introspection
+sassc
+libsoup3
+libportal-gtk4
+
+# Language toolchains
+go
+rust
+nodejs
+npm
+bun-bin
+uv
+python-pip
+python-pipx
+jdk17-openjdk
+maven
+ant
+
+# Language servers
+gopls
+rust-analyzer
+
+# The AUR helper. Stage 1 ships neither this nor base-devel, so installing
+# the dev module is also how a machine gains the ability to build from the AUR
+# without jarvos-module-install having to bootstrap it.
+yay-bin
+
+# Everyday tooling
+shellcheck
+graphviz
+z3
+github-cli
+git-lfs
+git-filter-repo
+
+[post]
+# Container and VM access without sudo, and the sockets they need.
+sudo -n usermod -aG docker,libvirt "$USER" || true
+sudo -n systemctl enable --now docker.socket || true
+sudo -n systemctl enable --now libvirtd.socket || true
+echo "Log out and back in for the docker/libvirt groups to take effect."

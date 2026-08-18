@@ -8,6 +8,7 @@ import "modules/drawers"
 import "modules/background"
 import "modules/areapicker"
 import "modules/cheatsheet"
+import "modules/setup"
 import Quickshell
 
 ShellRoot {
@@ -15,6 +16,7 @@ ShellRoot {
     Drawers {}
     AreaPicker {}
     Cheatsheet {}
+    Setup {}
 
     Shortcuts {}
     BatteryMonitor {}

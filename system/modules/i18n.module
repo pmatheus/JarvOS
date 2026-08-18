@@ -1,0 +1,19 @@
+# JarvOS module — languages beyond English.
+#
+# noto-fonts-cjk is the single biggest thing stage 1 dropped (~189 MiB
+# download). hyprlock's CJK line and kitty's symbol_map are its only users, so
+# a Latin-only user should not pay for it — but a CJK user gets tofu without it.
+
+name: Languages & fonts
+description: CJK fonts, extra typefaces and spellchecking dictionaries.
+icon: translate
+size_estimate: ~400 MiB
+default: false
+
+[packages]
+noto-fonts-cjk
+ttf-readex-pro
+libvoikko
+hspell
+nuspell
+tesseract-data-por
