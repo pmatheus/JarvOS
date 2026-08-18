@@ -19,7 +19,9 @@ seed_source_home() {
 .gitignore'
     home_file .config/nvim/lazy-lock.json <<<'{"plugin":"v1"}'
     home_file .config/hypr/hyprland/monitors.conf <<<'monitor=DP-1,3440x1440@144,0x0,1'
-    home_file .secrets/.env.central <<<'AWS_KEY=AKIAIOSFODNN7EXAMPLE'
+    # assembled at runtime — see the fake_* helpers in lib/sandbox.sh
+    printf 'AWS_KEY=%s\n' "$(fake_aws_key)" | home_file .secrets/.env.central
+    fake_private_key | home_file .ssh/id_ed25519
     printf 'base\nlinux\nhyprland\nkitty\nfish\nquickshell-git\nmatugen-bin\nneovim\nferoxbuster\n' \
         >"$FAKE_STATE/pacman-explicit"
     printf 'quickshell-git\nmatugen-bin\nferoxbuster\n' >"$FAKE_STATE/pacman-foreign"
@@ -65,11 +67,9 @@ test_init_repo_has_no_secrets() {
     local co="$SANDBOX_ROOT/verify"
     git clone --quiet "$BARE" "$co"
     rm -rf "$co/.git"
-    local hits
-    hits="$(grep -rIEl -e 'AKIA[0-9A-Z]{16}' -e 'BEGIN (RSA|OPENSSH|EC|DSA|PGP) PRIVATE KEY' \
-        -e 'gh[pousr]_[A-Za-z0-9]{20,}' "$co" 2>/dev/null || true)"
-    [[ -z "$hits" ]] || { fail_test "secret-shaped content in repo: $hits"; return; }
+    assert_no_secret_shaped_content "$co" || return
     assert_no_file "$co/dotfiles/.secrets/.env.central" || return
+    assert_no_file "$co/dotfiles/.ssh/id_ed25519" || return
     assert_no_file "$co/dotfiles/.config/hypr/hyprland/monitors.conf" || return
     pass_test
 }

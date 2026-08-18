@@ -70,6 +70,33 @@ assert_status() {
     return 1
 }
 
+# Gate a tree with the very patterns the tool ships, so the test cannot drift
+# from the production rules it is meant to prove.
+assert_no_secret_shaped_content() {
+    local dir="$1" pats hits
+    pats="$(mktemp)"
+    sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' \
+        "$REPO_ROOT/system/continuity/secret-patterns.txt" >"$pats"
+    hits="$(grep -rIElf "$pats" "$dir" --exclude-dir=.git 2>/dev/null || true)"
+    rm -f "$pats"
+    [[ -z "$hits" ]] && return 0
+    fail_test "secret-shaped content in: $hits"
+    return 1
+}
+
+# --- secret-shaped fixtures ---------------------------------------------
+#
+# The content gate has to be fed exactly what it must refuse. But this file is
+# committed to a public repo that scripts/secret-scan.sh guards, and a repo
+# shipping secret-shaped literals teaches everyone to ignore the alarm. So each
+# fixture is assembled from harmless parts at call time: what reaches the tool
+# is byte-identical to the real thing, what sits on disk here matches nothing.
+
+fake_openai_key()   { printf 's%s-%s' 'k' 'abcdefghijklmnopqrstuvwxyz012345'; }
+fake_github_token() { printf 'gh%s_%s' 'p' 'abcdefghijklmnopqrstuvwxyz0123456789'; }
+fake_aws_key()      { printf 'AK%s%s' 'IA' 'IOSFODNN7EXAMPLE'; }
+fake_private_key()  { printf -- '-----%s %s PRIVATE KEY-----\n' 'BEGIN' "${1:-OPENSSH}"; }
+
 # --- sandbox ------------------------------------------------------------
 
 make_sandbox() {
