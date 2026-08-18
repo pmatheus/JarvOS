@@ -28,6 +28,11 @@ ntfs-3g
 smartmontools
 openrgb
 
+# Firewall, mirror ranking and system accounting
+ufw
+reflector
+sysstat
+
 [post]
 if [ "$(findmnt -no FSTYPE /)" != "btrfs" ]; then
     echo "root is not btrfs — installing the tools but not wiring snapshots"
@@ -43,3 +48,4 @@ else
     echo "snapper is the snapshot tool; grub-btrfsd now lists /.snapshots"
 fi
 sudo -n systemctl enable --now smartd.service || true
+sudo -n ufw --force enable || true

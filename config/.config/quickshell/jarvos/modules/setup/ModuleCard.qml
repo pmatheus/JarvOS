@@ -23,13 +23,17 @@ StyledRect {
     // module file's hand-written figure: a card promising 200 MB that pulls
     // 4 GB is how trust dies. The static estimate is only the offline fallback.
     readonly property string sizeText: {
-        const bytes = root.module.download_bytes ?? 0;
+        const bytes = root.module.download_bytes ?? -1;
         const aur = root.module.aur_pending ?? 0;
-        if (bytes <= 0 && aur <= 0)
+        // -1 is "pacman could not tell us"; only then is the module file's
+        // hand-written figure worth showing.
+        if (bytes < 0 && aur <= 0)
             return root.module.size_estimate;
         const parts = [];
         if (bytes > 0)
             parts.push(qsTr("%1 to download").arg(root.formatBytes(bytes)));
+        else if (aur <= 0)
+            parts.push(qsTr("already in the package cache"));
         if (aur > 0)
             parts.push(qsTr("%1 to build from the AUR").arg(aur));
         if (root.module.needs_toolchain)
@@ -45,6 +49,11 @@ StyledRect {
         return qsTr("%1 KiB").arg(Math.round(bytes / 1024));
     }
     readonly property real fraction: state.total > 0 ? state.done / state.total : 0
+    readonly property int aurPending: module.aur_pending ?? 0
+    // Anything the binary repo does not serve is compiled here, on the user's
+    // machine. A handful is a minute; a security toolkit is an evening. Say so
+    // before the click, not after.
+    readonly property bool longBuild: !installed && !running && aurPending >= 5
 
     signal toggled
 
@@ -215,6 +224,28 @@ StyledRect {
                 type: TextButton.Text
                 text: qsTr("View log")
                 onClicked: JarvosSetup.openLog(root.state.log)
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.topMargin: Appearance.spacing.small / 2
+            visible: root.longBuild
+            spacing: Appearance.spacing.small
+
+            MaterialIcon {
+                Layout.alignment: Qt.AlignTop
+                text: "hourglass_top"
+                color: Colours.palette.m3tertiary
+                font.pointSize: Appearance.font.size.normal
+            }
+
+            StyledText {
+                Layout.fillWidth: true
+                text: qsTr("%1 of these are compiled on this machine — that can take hours. The desktop stays usable while it runs.").arg(root.aurPending)
+                color: Colours.palette.m3tertiary
+                font.pointSize: Appearance.font.size.small
+                wrapMode: Text.WordWrap
             }
         }
 

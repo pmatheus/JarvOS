@@ -394,8 +394,15 @@ pending_download() {
         echo 0
         return
     }
-    pacman -Sp --needed --print-format '%s' "${repo[@]}" 2>/dev/null |
-        awk '{s+=$1} END {printf "%d\n", s+0}'
+    # -1 means "could not measure" (no sync database, unresolvable target) and
+    # is what makes the panel fall back to the module file's static estimate.
+    # A genuine 0 means everything left is already in pacman's cache.
+    local out
+    if ! out=$(pacman -Sp --needed --print-format '%s' "${repo[@]}" 2>/dev/null); then
+        echo -1
+        return
+    fi
+    printf '%s\n' "$out" | awk '{s+=$1} END {printf "%d\n", s+0}'
 }
 
 # AUR packages cannot be sized without building them; the panel says so rather
