@@ -85,3 +85,44 @@ that claims "fastest to install" cannot compile C++/Qt on the user's machine.
 ## Out of scope
 
 Offline embedded mirror, Secure Boot, aarch64, dual-boot with Windows.
+
+## Addendum (chairman, 2026-08-18): machine continuity
+
+**Requirement.** With every module ticked, the installed box must be *this* box —
+same tooling, same visuals, same shortcuts, same instrumentation — minus personal
+files. And moving machines must feel like not having moved: clone a private
+`.claude` + plugins and fly. The OS must actively push the user to keep their own
+private git sync project, so reinstall / format / new machine / pendrive is routine.
+
+### 5. `jarvos-sync` — the user's profile repo
+
+- **What the distro ships** (public, in the JarvOS repo): the desktop, its dotfiles,
+  the module catalogue. **What the user owns** (private repo of their own): the delta —
+  extra packages, changed dotfiles, enabled services, and pointers (never values) to
+  their secrets.
+- CLI:
+  - `jarvos-sync init [--repo NAME]` — creates a private GitHub repo (via `gh`) seeded
+    from the current machine: explicit package list minus what the modules already
+    cover, dotfile delta against the JarvOS baseline, user/system enabled units,
+    dconf/gsettings, and a `secrets.manifest` naming (not containing) what must come
+    from the vault.
+  - `jarvos-sync push` / `jarvos-sync status` — keep it current; `status` shows drift.
+  - `jarvos-sync restore <repo-url>` — on a fresh box: installs the packages, applies
+    the dotfile delta, enables the units, and prints exactly what still needs a secret.
+- **Host-specific state is never synced**: `monitors.conf`, matugen `colors.conf`,
+  machine-id, keys, tokens, history.
+- Home-resident desktop state is explicitly mapped, not guessed: `~/.config/hypr`
+  (minus `monitors.conf`), `~/.config/quickshell/jarvos` (comes from the distro),
+  `~/.local/state/quickshell` (regenerated), `~/Pictures/Wallpapers`, `~/.config/fish`.
+- First-run Setup shows two doors: **"Restore my profile"** (paste a repo URL / pick
+  from `gh repo list`) and **"Create my profile"** (runs `init` once the user is set up).
+  Skipping stays a first-class choice, and the app says plainly why a profile repo is
+  worth having.
+
+### Verification for continuity
+
+After a full install with every module ticked plus `jarvos-sync restore`, the delta
+against this box must be reportable and empty of essentials:
+`comm -13 <(sort installed-explicit) <(sort system/packages/pacman-explicit-full.txt)`
+plus the enabled-unit diff, pasted into the report. Anything missing is either fixed
+or explicitly listed as intentionally-not-synced.
