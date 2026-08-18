@@ -22,9 +22,15 @@ bc
 curl
 networkmanager
 
-# === BOOT ===
+# === BOOT / FILESYSTEM ===
 grub
 efibootmgr
+# The installer lays the target out as btrfs with @/@home/@log/@pkg subvolumes,
+# so the installed system needs the userspace tools to manage what it boots from.
+# Snapshot tooling (snapper, timeshift, grub-btrfs) is a first-run module: it
+# changes nothing about how the desktop looks, and half-configured snapshots are
+# worse than an explicit choice.
+btrfs-progs
 
 # === LOGIN MANAGER ===
 sddm
