@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="JarvOS">
+  <!-- JarvOS mark, positive: the hook alone, for surfaces that already have a ground -->
+  <path d="M332 139 V290 a76 76 0 0 1 -152 0" fill="none" stroke="currentColor"
+        stroke-width="58" stroke-linecap="round"/>
+</svg>
