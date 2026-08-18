@@ -1,0 +1,755 @@
+#!/usr/bin/env bash
+# jarvos-sync — capture what makes this box *this* box, and replay it elsewhere.
+#
+# The distro ships the desktop. This ships the delta: the packages you added,
+# the dotfiles you changed, the units you enabled, and a manifest naming (never
+# containing) the secrets you must bring from your vault.
+#
+# Manifests live in system/continuity/ of the JarvOS tree. See docs/jarvos-sync.md.
+set -euo pipefail
+
+VERSION="0.1.0"
+PROFILE_SCHEMA=1
+PROG="${0##*/}"
+
+# ── configuration ────────────────────────────────────────────────────────
+
+JARVOS_ROOT="${JARVOS_ROOT:-}"
+SYNC_DIR="${JARVOS_SYNC_DIR:-$HOME/.local/share/jarvos/profile}"
+STATE_DIR="$HOME/.local/state/jarvos"
+MAX_FILE_MB="${JARVOS_SYNC_MAX_FILE_MB:-5}"
+BACKUP_ROOT="$HOME/.jarvos-sync-backup"
+
+PROGRESS_FILE="${JARVOS_SYNC_PROGRESS:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/jarvos-sync/progress.json}"
+ACTION="capture"
+LOG_FILE=""
+DRY_RUN=0
+FORCE=0
+QUIET=0
+
+TMP_ROOT=""
+DENY_PATTERNS=()
+UNIT_DENY=()
+ALLOW_ENTRIES=()
+SECRET_RE=""
+
+# ── plumbing ─────────────────────────────────────────────────────────────
+
+say() { [[ $QUIET -eq 1 ]] || printf '%s\n' "$*"; }
+warn() { printf '%s: %s\n' "$PROG" "$*" >&2; }
+
+die() {
+    progress "failed" "$PHASE" "$PHASE_INDEX" "$STEP" "$1" 1
+    printf '%s: %s\n' "$PROG" "$1" >&2
+    exit 1
+}
+
+cleanup() {
+    local code=$?
+    [[ -n "$TMP_ROOT" && -d "$TMP_ROOT" ]] && rm -rf "$TMP_ROOT"
+    return "$code"
+}
+trap cleanup EXIT
+
+PHASE="init"
+PHASE_INDEX=1
+PHASE_TOTAL=4
+STEP=0
+STEP_TOTAL=0
+
+# progress <status> <phase> <phase_index> <step> <message> [exit_code]
+# One JSON object, rewritten atomically. The Setup app polls this file; the
+# contract is documented in docs/jarvos-sync.md and agreed with the Setup panel.
+progress() {
+    local status="$1" phase="$2" idx="$3" step="$4" msg="$5" code="${6:-null}"
+    local dir tmp
+    dir="$(dirname "$PROGRESS_FILE")"
+    mkdir -p "$dir" 2>/dev/null || return 0
+    tmp="$(mktemp "$dir/.progress.XXXXXX")" || return 0
+    printf '{\n' >"$tmp"
+    printf '  "tool": "jarvos-sync",\n' >>"$tmp"
+    printf '  "action": "%s",\n' "$ACTION" >>"$tmp"
+    printf '  "status": "%s",\n' "$status" >>"$tmp"
+    printf '  "phase": "%s",\n' "$phase" >>"$tmp"
+    printf '  "phase_index": %s,\n' "$idx" >>"$tmp"
+    printf '  "phase_total": %s,\n' "$PHASE_TOTAL" >>"$tmp"
+    printf '  "step": %s,\n' "$step" >>"$tmp"
+    printf '  "step_total": %s,\n' "$STEP_TOTAL" >>"$tmp"
+    printf '  "message": "%s",\n' "${msg//\"/\'}" >>"$tmp"
+    printf '  "exit_code": %s,\n' "$code" >>"$tmp"
+    printf '  "log": "%s",\n' "$LOG_FILE" >>"$tmp"
+    printf '  "secrets_manifest": "%s",\n' "$SYNC_DIR/secrets.manifest" >>"$tmp"
+    printf '  "updated": "%s"\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$tmp"
+    printf '}\n' >>"$tmp"
+    mv -f "$tmp" "$PROGRESS_FILE"
+}
+
+phase_begin() {
+    PHASE="$1"; PHASE_INDEX="$2"; STEP=0
+    progress "running" "$PHASE" "$PHASE_INDEX" 0 "$3"
+}
+
+# Strip '#' comments and blank lines from a manifest.
+manifest_lines() {
+    [[ -f "$1" ]] || return 0
+    sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$1"
+}
+
+resolve_root() {
+    local c
+    if [[ -n "$JARVOS_ROOT" ]]; then
+        [[ -d "$JARVOS_ROOT/system/continuity" ]] || die "JARVOS_ROOT=$JARVOS_ROOT has no system/continuity"
+        return
+    fi
+    for c in "/usr/share/jarvos" "$HOME/JarvOS" "$(cd "$(dirname "$0")/.." && pwd)"; do
+        if [[ -d "$c/system/continuity" ]]; then JARVOS_ROOT="$c"; return; fi
+    done
+    die "cannot find the JarvOS tree; set JARVOS_ROOT"
+}
+
+load_manifests() {
+    local f
+    mapfile -t ALLOW_ENTRIES < <(manifest_lines "$JARVOS_ROOT/system/continuity/dotfiles.allow")
+    mapfile -t DENY_PATTERNS < <(manifest_lines "$JARVOS_ROOT/system/continuity/dotfiles.deny")
+    mapfile -t UNIT_DENY < <(manifest_lines "$JARVOS_ROOT/system/continuity/units.rules")
+    f="$JARVOS_ROOT/system/continuity/dotfiles.allow.local"
+    [[ -f "$f" ]] && mapfile -O "${#ALLOW_ENTRIES[@]}" -t ALLOW_ENTRIES < <(manifest_lines "$f")
+    SECRET_RE="$TMP_ROOT/secret-patterns"
+    manifest_lines "$JARVOS_ROOT/system/continuity/secret-patterns.txt" >"$SECRET_RE"
+}
+
+# ── capture ──────────────────────────────────────────────────────────────
+
+# path_denied <home-relative-path> -> matched pattern on stdout, 0 if denied
+path_denied() {
+    local rel="$1" pat
+    for pat in "${DENY_PATTERNS[@]}"; do
+        # shellcheck disable=SC2053  # glob match is the point
+        if [[ "$rel" == $pat ]]; then printf '%s' "$pat"; return 0; fi
+    done
+    return 1
+}
+
+unit_denied() {
+    local unit="$1" pat
+    for pat in "${UNIT_DENY[@]}"; do
+        # shellcheck disable=SC2053
+        if [[ "$unit" == $pat ]]; then return 0; fi
+    done
+    return 1
+}
+
+# Where the distro ships this home-relative path, if anywhere.
+baseline_for() {
+    local rel="$1"
+    case "$rel" in
+        Pictures/Wallpapers/*) printf '%s/wallpapers/%s' "$JARVOS_ROOT" "${rel#Pictures/Wallpapers/}" ;;
+        *) printf '%s/config/%s' "$JARVOS_ROOT" "$rel" ;;
+    esac
+}
+
+SKIPPED_SIZE=()
+SKIPPED_LINK=()
+SKIPPED_SECRET=()
+DENIED_COUNT=0
+CAPTURED_COUNT=0
+
+capture_dotfiles() {
+    local stage="$1" out="$1/dotfiles"
+    local entry abs rel base pat max_bytes
+    max_bytes=$((MAX_FILE_MB * 1024 * 1024))
+    mkdir -p "$out"
+
+    for entry in "${ALLOW_ENTRIES[@]}"; do
+        abs="$HOME/$entry"
+        [[ -e "$abs" || -L "$abs" ]] || continue
+        while IFS= read -r -d '' f; do
+            rel="${f#"$HOME"/}"
+            if pat="$(path_denied "$rel")"; then
+                DENIED_COUNT=$((DENIED_COUNT + 1))
+                continue
+            fi
+            if [[ -L "$f" ]]; then SKIPPED_LINK+=("$rel"); continue; fi
+            [[ -f "$f" ]] || continue
+            if [[ "$(stat -c %s "$f")" -gt "$max_bytes" ]]; then
+                SKIPPED_SIZE+=("$rel"); continue
+            fi
+            base="$(baseline_for "$rel")"
+            [[ -f "$base" ]] && cmp -s "$f" "$base" && continue
+            if grep -qIEf "$SECRET_RE" "$f" 2>/dev/null; then
+                SKIPPED_SECRET+=("$rel"); continue
+            fi
+            mkdir -p "$out/$(dirname "$rel")"
+            cp -p "$f" "$out/$rel"
+            CAPTURED_COUNT=$((CAPTURED_COUNT + 1))
+            STEP=$((STEP + 1))
+        done < <(find "$abs" \( -type f -o -type l \) -print0 2>/dev/null)
+    done
+    progress "running" "$PHASE" "$PHASE_INDEX" "$STEP" "captured $CAPTURED_COUNT dotfiles"
+}
+
+# What a full install gives the user: stage 1 plus every module. The retired
+# v0.1 tier files (aur-core/apps/security) are the fallback for a pre-v0.2 tree
+# only — using them alongside stage 1 would mark packages the distro no longer
+# ships as "already provided", and the user's profile would silently lose them.
+baseline_packages() {
+    local f
+    if [[ -f "$JARVOS_ROOT/system/packages/stage1.txt" ]]; then
+        manifest_lines "$JARVOS_ROOT/system/packages/stage1.txt"
+    else
+        for f in "$JARVOS_ROOT"/system/packages/aur-*.txt; do
+            [[ -f "$f" ]] || continue
+            case "$f" in *-full.txt) continue ;; esac
+            manifest_lines "$f"
+        done
+    fi
+    for f in "$JARVOS_ROOT"/system/modules/*.module; do
+        [[ -f "$f" ]] || continue
+        module_packages "$f"
+    done
+}
+
+# Read a module's package list. Tolerates `packages=a b c`, `packages="a b"`,
+# and a `[packages]`/`packages:` block of one name per line.
+module_packages() {
+    awk '
+        /^[[:space:]]*#/ { next }
+        /^[[:space:]]*packages[[:space:]]*=/ {
+            sub(/^[[:space:]]*packages[[:space:]]*=[[:space:]]*/, ""); gsub(/["'"'"']/, "")
+            n = split($0, a, /[[:space:],]+/); for (i = 1; i <= n; i++) if (a[i] != "") print a[i]
+            next
+        }
+        /^[[:space:]]*(packages:|\[packages\])[[:space:]]*$/ { inblock = 1; next }
+        /^[[:space:]]*(\[|[a-z_]+[:=])/ { inblock = 0 }
+        inblock && NF { gsub(/^[[:space:]]*-?[[:space:]]*/, ""); print $1 }
+    ' "$1"
+}
+
+capture_packages() {
+    local stage="$1" b e a
+    mkdir -p "$stage/packages"
+    b="$TMP_ROOT/base.pkgs"; e="$TMP_ROOT/expl.pkgs"; a="$TMP_ROOT/aur.pkgs"
+    baseline_packages | sort -u >"$b"
+    pacman -Qqe 2>/dev/null | sort -u >"$e" || die "pacman -Qqe failed"
+    pacman -Qqm 2>/dev/null | sort -u >"$a" || : >"$a"
+    comm -23 "$e" "$b" >"$stage/packages/explicit.txt"
+    comm -12 "$stage/packages/explicit.txt" "$a" >"$stage/packages/aur.txt"
+    [[ -s "$b" ]] || warn "baseline package list is empty — every explicit package looks like a delta"
+}
+
+capture_units() {
+    local stage="$1" scope f base unit
+    mkdir -p "$stage/units"
+    for scope in system user; do
+        base="$TMP_ROOT/base.$scope"
+        manifest_lines "$JARVOS_ROOT/system/services/enable.txt" |
+            awk -v s="$scope" '$1 == s { print $2 }' | sort -u >"$base"
+        f="$stage/units/$scope.txt"
+        : >"$f"
+        while IFS= read -r unit; do
+            [[ -n "$unit" ]] || continue
+            grep -qxF "$unit" "$base" && continue
+            unit_denied "$unit" && continue
+            printf '%s\n' "$unit"
+        done < <(enabled_units "$scope") | sort -u >"$f"
+    done
+}
+
+enabled_units() {
+    local scope="$1"
+    if [[ "$scope" == user ]]; then
+        systemctl --user list-unit-files --state=enabled --no-legend 2>/dev/null | awk '{print $1}'
+    else
+        systemctl list-unit-files --state=enabled --no-legend 2>/dev/null | awk '{print $1}'
+    fi
+}
+
+capture_dconf() {
+    local stage="$1"
+    command -v dconf >/dev/null 2>&1 || return 0
+    mkdir -p "$stage/dconf"
+    dconf dump / >"$stage/dconf/user.dconf" 2>/dev/null || : >"$stage/dconf/user.dconf"
+    [[ -s "$stage/dconf/user.dconf" ]] || rm -f "$stage/dconf/user.dconf"
+}
+
+write_secrets_manifest() {
+    local stage="$1" out="$1/secrets.manifest" line target
+    {
+        printf '# JarvOS profile — secrets manifest.\n'
+        printf '#\n'
+        printf '# Names and locations only. No value from this list is in this repo.\n'
+        printf '# Generated by %s %s. Deterministic on purpose: no timestamp, so a\n' "$PROG" "$VERSION"
+        printf '# re-capture that found nothing new produces no diff.\n\n'
+        printf '## Bring these from your vault\n\n'
+        while IFS= read -r line; do
+            target="${line%%|*}"; target="${target%"${target##*[![:space:]]}"}"
+            if [[ -e "${target/#\~/$HOME}" ]]; then
+                printf '%s | PRESENT on the source machine\n' "$line"
+            else
+                printf '%s | absent on the source machine\n' "$line"
+            fi
+        done < <(manifest_lines "$JARVOS_ROOT/system/continuity/secrets.manifest.in")
+
+        printf '\n## Environment variables the synced dotfiles expect\n\n'
+        grep -rhoIE '\$\{?[A-Z][A-Z0-9_]{2,}\}?' "$stage/dotfiles" 2>/dev/null |
+            tr -d '${}' | sort -u |
+            grep -E '(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_KEY|APIKEY|_KEY$|_KEYS$|_PASS$)' |
+            sed 's/^/$/' || printf '(none referenced)\n'
+
+        if [[ ${#SKIPPED_SECRET[@]} -gt 0 ]]; then
+            printf '\n## Refused by the content gate (they hold secret-shaped strings)\n\n'
+            printf '%s\n' "${SKIPPED_SECRET[@]}"
+        fi
+    } >"$out"
+}
+
+write_notes() {
+    local stage="$1"
+    {
+        printf '# What jarvos-sync deliberately left behind\n\n'
+        printf 'Denied by system/continuity/dotfiles.deny: %d file(s).\n' "$DENIED_COUNT"
+        printf 'Paths are not listed: the denylist covers secrets, history and\n'
+        printf 'transcripts, and their names are themselves personal.\n\n'
+        printf '## Symlinks (not portable; recreate by hand if you want them)\n\n'
+        if [[ ${#SKIPPED_LINK[@]} -gt 0 ]]; then printf '%s\n' "${SKIPPED_LINK[@]}"; else printf '(none)\n'; fi
+        printf '\n## Larger than %s MiB (raise JARVOS_SYNC_MAX_FILE_MB to include)\n\n' "$MAX_FILE_MB"
+        if [[ ${#SKIPPED_SIZE[@]} -gt 0 ]]; then printf '%s\n' "${SKIPPED_SIZE[@]}"; else printf '(none)\n'; fi
+        printf '\n## Host-specific state the new machine regenerates\n\n'
+        printf 'monitors.conf, colors.conf, scheme/, .local/state, machine-id.\n'
+    } >"$stage/notes.txt"
+}
+
+write_profile_json() {
+    local stage="$1" pkgs aur units_s units_u dots
+    pkgs="$(wc -l <"$stage/packages/explicit.txt")"
+    aur="$(wc -l <"$stage/packages/aur.txt")"
+    units_s="$(wc -l <"$stage/units/system.txt")"
+    units_u="$(wc -l <"$stage/units/user.txt")"
+    dots="$(find "$stage/dotfiles" -type f | wc -l)"
+    cat >"$stage/jarvos-profile.json" <<EOF
+{
+  "schema": $PROFILE_SCHEMA,
+  "tool": "jarvos-sync",
+  "version": "$VERSION",
+  "jarvos_release": "$(cat /etc/jarvos-release 2>/dev/null | head -1 || echo unknown)",
+  "packages": { "explicit": $pkgs, "aur": $aur },
+  "units": { "system": $units_s, "user": $units_u },
+  "dotfiles": { "files": $dots, "denied": $DENIED_COUNT,
+    "skipped_symlink": ${#SKIPPED_LINK[@]}, "skipped_size": ${#SKIPPED_SIZE[@]},
+    "skipped_secret": ${#SKIPPED_SECRET[@]} }
+}
+EOF
+}
+
+write_readme() {
+    cp "$JARVOS_ROOT/system/continuity/profile-README.md" "$1/README.md"
+}
+
+# Build a complete profile tree at $1 (replacing its content, keeping .git).
+do_capture() {
+    local dest="$1" build="$TMP_ROOT/build" item
+    mkdir -p "$build"
+    phase_begin "dotfiles" 1 "reading the dotfile delta"
+    capture_dotfiles "$build"
+    phase_begin "packages" 2 "comparing packages against the JarvOS baseline"
+    capture_packages "$build"
+    phase_begin "units" 3 "reading enabled units"
+    capture_units "$build"
+    capture_dconf "$build"
+    phase_begin "post" 4 "writing manifests"
+    write_secrets_manifest "$build"
+    write_notes "$build"
+    write_profile_json "$build"
+    write_readme "$build"
+
+    mkdir -p "$dest"
+    for item in dotfiles packages units dconf secrets.manifest notes.txt \
+        jarvos-profile.json README.md; do
+        rm -rf "${dest:?}/$item"
+        [[ -e "$build/$item" ]] && mv "$build/$item" "$dest/$item"
+    done
+}
+
+# ── restore ──────────────────────────────────────────────────────────────
+
+RESTORE_PKGS=0
+RESTORE_DOTS=0
+RESTORE_UNITS=0
+BACKUP_DIR=""
+
+as_root() { if [[ $EUID -eq 0 ]]; then "$@"; else sudo "$@"; fi; }
+
+restore_packages() {
+    local src="$1" want missing repo aur
+    [[ -f "$src/packages/explicit.txt" ]] || return 0
+    want="$TMP_ROOT/want"; missing="$TMP_ROOT/missing"
+    repo="$TMP_ROOT/repo.pkgs"; aur="$TMP_ROOT/aur.want"
+    sort -u "$src/packages/explicit.txt" >"$want"
+    comm -23 "$want" <(pacman -Qq 2>/dev/null | sort -u) >"$missing"
+    RESTORE_PKGS="$(wc -l <"$missing")"
+    [[ "$RESTORE_PKGS" -eq 0 ]] && { say "  packages: nothing missing"; return 0; }
+    sort -u "$src/packages/aur.txt" 2>/dev/null >"$TMP_ROOT/aur.all" || : >"$TMP_ROOT/aur.all"
+    comm -12 "$missing" "$TMP_ROOT/aur.all" >"$aur"
+    comm -23 "$missing" "$aur" >"$repo"
+    if [[ $DRY_RUN -eq 1 ]]; then
+        say "  packages: would install $RESTORE_PKGS ($(wc -l <"$repo") repo, $(wc -l <"$aur") AUR)"
+        return 0
+    fi
+    if [[ -s "$repo" ]]; then
+        say "  packages: installing $(wc -l <"$repo") from the repos"
+        # shellcheck disable=SC2046  # word splitting is the interface
+        as_root pacman -S --needed --noconfirm $(tr '\n' ' ' <"$repo") || warn "some repo packages failed"
+    fi
+    if [[ -s "$aur" ]]; then
+        if command -v yay >/dev/null 2>&1; then
+            say "  packages: installing $(wc -l <"$aur") from the AUR"
+            # shellcheck disable=SC2046
+            yay -S --needed --noconfirm $(tr '\n' ' ' <"$aur") || warn "some AUR packages failed"
+        else
+            warn "yay is missing; skipping $(wc -l <"$aur") AUR package(s)"
+        fi
+    fi
+}
+
+restore_dotfiles() {
+    local src="$1/dotfiles" rel target
+    [[ -d "$src" ]] || return 0
+    while IFS= read -r -d '' f; do
+        rel="${f#"$src"/}"
+        target="$HOME/$rel"
+        if [[ -f "$target" ]] && cmp -s "$f" "$target"; then continue; fi
+        RESTORE_DOTS=$((RESTORE_DOTS + 1))
+        STEP=$((STEP + 1))
+        if [[ $DRY_RUN -eq 1 ]]; then
+            say "  would write ~/$rel"
+            continue
+        fi
+        if [[ -e "$target" && $FORCE -eq 0 ]]; then
+            [[ -z "$BACKUP_DIR" ]] && BACKUP_DIR="$BACKUP_ROOT/$(date +%Y%m%d-%H%M%S)"
+            mkdir -p "$BACKUP_DIR/$(dirname "$rel")"
+            cp -p "$target" "$BACKUP_DIR/$rel"
+            say "  backed up ~/$rel"
+        fi
+        mkdir -p "$(dirname "$target")"
+        cp -p "$f" "$target"
+        progress "running" "$PHASE" "$PHASE_INDEX" "$STEP" "restored $rel"
+    done < <(find "$src" -type f -print0 2>/dev/null)
+}
+
+restore_units() {
+    local src="$1/units" scope unit
+    for scope in system user; do
+        [[ -f "$src/$scope.txt" ]] || continue
+        while IFS= read -r unit; do
+            [[ -n "$unit" ]] || continue
+            if [[ "$scope" == user ]]; then
+                systemctl --user is-enabled "$unit" >/dev/null 2>&1 && continue
+            else
+                systemctl is-enabled "$unit" >/dev/null 2>&1 && continue
+            fi
+            RESTORE_UNITS=$((RESTORE_UNITS + 1))
+            if [[ $DRY_RUN -eq 1 ]]; then say "  would enable $scope unit $unit"; continue; fi
+            if [[ "$scope" == user ]]; then
+                systemctl --user enable "$unit" >/dev/null 2>&1 || warn "could not enable user unit $unit"
+            else
+                as_root systemctl enable "$unit" >/dev/null 2>&1 || warn "could not enable $unit"
+            fi
+        done <"$src/$scope.txt"
+    done
+}
+
+restore_post() {
+    local src="$1"
+    if [[ -f "$src/dconf/user.dconf" && $DRY_RUN -eq 0 ]] && command -v dconf >/dev/null 2>&1; then
+        dconf load / <"$src/dconf/user.dconf" 2>/dev/null || warn "dconf load failed"
+    fi
+    say ""
+    say "Host-specific state was not restored, by design: monitors.conf, colors.conf,"
+    say "the colour scheme and machine-id are regenerated for this machine."
+    if [[ -f "$src/secrets.manifest" ]]; then
+        say ""
+        say "Still needed from your vault — nothing below is in the repo:"
+        say ""
+        sed 's/^/  /' "$src/secrets.manifest"
+    fi
+}
+
+# ── git helpers ──────────────────────────────────────────────────────────
+
+git_profile() { git -C "$SYNC_DIR" "$@"; }
+
+ensure_git_repo() {
+    [[ -d "$SYNC_DIR/.git" ]] && return 0
+    git init --quiet -b main "$SYNC_DIR"
+}
+
+# The last line of defence before anything is committed. The per-file gate in
+# capture already refuses secret-shaped content; this re-checks the whole tree,
+# which also catches whatever a human dropped into the profile directory by hand.
+verify_no_secrets() {
+    local dir="$1" hits
+    hits="$(grep -rIElf "$SECRET_RE" "$dir" --exclude-dir=.git --exclude=secrets.manifest 2>/dev/null || true)"
+    [[ -z "$hits" ]] && return 0
+    printf '%s: refusing to commit — secret-shaped content in:\n%s\n' "$PROG" "$hits" >&2
+    die "profile tree failed the secret gate"
+}
+
+commit_profile() {
+    local msg="$1"
+    verify_no_secrets "$SYNC_DIR"
+    # --force: a .gitignore *inside* a captured tree (say ~/.config/nvim) is the
+    # user's rule for their project, not for our snapshot. Without this, git
+    # silently drops those files and the restore comes back incomplete.
+    git_profile add -A --force
+    git_profile diff --cached --quiet && return 1
+    git_profile -c user.name="${GIT_AUTHOR_NAME:-jarvos-sync}" \
+        -c user.email="${GIT_AUTHOR_EMAIL:-jarvos-sync@localhost}" \
+        commit --quiet -m "$msg"
+    return 0
+}
+
+push_profile() {
+    git_profile remote get-url origin >/dev/null 2>&1 || { warn "no remote; skipping push"; return 0; }
+    local branch url
+    branch="$(git_profile rev-parse --abbrev-ref HEAD)"
+    git_profile push --quiet -u origin "$branch" 2>/dev/null ||
+        git_profile push --quiet origin "$branch" || die "push failed"
+    # A local bare remote keeps whatever HEAD `git init --bare` gave it, so a
+    # later `restore` would clone it with no working tree. Point it at us.
+    url="$(git_profile remote get-url origin)"
+    if [[ -d "$url" ]] && [[ "$(git --git-dir="$url" rev-parse --is-bare-repository 2>/dev/null)" == true ]]; then
+        git --git-dir="$url" symbolic-ref HEAD "refs/heads/$branch" 2>/dev/null || true
+    fi
+}
+
+# ── commands ─────────────────────────────────────────────────────────────
+
+cmd_capture() {
+    local into=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --into) into="${2:-}"; shift 2 ;;
+            --progress) shift ;;
+            *) die "capture: unknown option $1" ;;
+        esac
+    done
+    [[ -n "$into" ]] || die "capture: --into PATH is required"
+    do_capture "$into"
+    say "captured into $into"
+    progress "done" "post" 4 "$STEP" "captured into $into" 0
+}
+
+cmd_init() {
+    local repo_name="" local_remote="" desc="My JarvOS profile"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --repo) repo_name="${2:-}"; shift 2 ;;
+            --local) local_remote="${2:-}"; shift 2 ;;
+            --dir) SYNC_DIR="${2:-}"; shift 2 ;;
+            --progress) shift ;;
+            *) die "init: unknown option $1" ;;
+        esac
+    done
+    do_capture "$SYNC_DIR"
+    ensure_git_repo
+    commit_profile "jarvos-sync: initial profile" || true
+    if [[ -n "$local_remote" ]]; then
+        git_profile remote get-url origin >/dev/null 2>&1 ||
+            git_profile remote add origin "$local_remote"
+        push_profile
+    elif [[ -n "$repo_name" ]]; then
+        command -v gh >/dev/null 2>&1 || die "gh is not installed; use --local PATH or add a remote by hand"
+        gh repo create "$repo_name" --private --source="$SYNC_DIR" --push \
+            --description "$desc" --remote origin >/dev/null || die "gh repo create failed"
+    else
+        say "no remote requested; add one with: git -C $SYNC_DIR remote add origin <url>"
+    fi
+    say ""
+    say "Profile at $SYNC_DIR"
+    say "Read $SYNC_DIR/secrets.manifest — it names what must come from your vault."
+    progress "done" "post" 4 "$STEP" "profile initialised" 0
+}
+
+cmd_push() {
+    local msg=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -m|--message) msg="${2:-}"; shift 2 ;;
+            --dir) SYNC_DIR="${2:-}"; shift 2 ;;
+            --progress) shift ;;
+            *) die "push: unknown option $1" ;;
+        esac
+    done
+    [[ -d "$SYNC_DIR/.git" ]] || die "no profile at $SYNC_DIR; run '$PROG init' first"
+    do_capture "$SYNC_DIR"
+    if commit_profile "${msg:-jarvos-sync: refresh $(date -u +%Y-%m-%d)}"; then
+        push_profile
+        say "pushed"
+    else
+        say "nothing to push — profile already matches this machine"
+    fi
+    progress "done" "post" 4 "$STEP" "push complete" 0
+}
+
+cmd_status() {
+    local tmp drift
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dir) SYNC_DIR="${2:-}"; shift 2 ;;
+            *) die "status: unknown option $1" ;;
+        esac
+    done
+    [[ -d "$SYNC_DIR" ]] || die "no profile at $SYNC_DIR; run '$PROG init' first"
+    QUIET=1
+    tmp="$TMP_ROOT/status"
+    do_capture "$tmp"
+    QUIET=0
+    # --new-file so a whole new directory is reported file by file, not as
+    # "Only in …: kitty" — the user wants to see which file drifted.
+    drift="$(diff -rqN --exclude=.git --exclude=.gitignore "$SYNC_DIR" "$tmp" 2>/dev/null || true)"
+    printf 'profile: %s\n' "$SYNC_DIR"
+    if [[ -z "$drift" ]]; then
+        printf 'machine: in sync with the profile\n'
+    else
+        printf 'machine: drift against the profile\n'
+        printf '%s\n' "$drift" | sed 's#'"$tmp"'#<this machine>#g; s#'"$SYNC_DIR"'#<profile>#g; s/^/  /'
+    fi
+    if [[ -d "$SYNC_DIR/.git" ]]; then
+        if git_profile diff --quiet && git_profile diff --cached --quiet; then
+            printf 'git:     clean\n'
+        else
+            printf 'git:     uncommitted changes — run "%s push"\n' "$PROG"
+        fi
+    fi
+    progress "done" "post" 4 0 "status reported" 0
+}
+
+cmd_restore() {
+    local src="" clone
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run) DRY_RUN=1; shift ;;
+            --force) FORCE=1; shift ;;
+            --dir) SYNC_DIR="${2:-}"; shift 2 ;;
+            --progress) shift ;;
+            -*) die "restore: unknown option $1" ;;
+            *) src="$1"; shift ;;
+        esac
+    done
+    [[ -n "$src" ]] || die "restore: need a repo URL or path"
+
+    clone="$TMP_ROOT/clone"
+    phase_begin "packages" 1 "fetching the profile"
+    git clone --quiet --depth 1 "$src" "$clone" 2>/dev/null ||
+        git clone --quiet "$src" "$clone" 2>/dev/null ||
+        die "cannot clone $src"
+    [[ -f "$clone/jarvos-profile.json" ]] || die "$src is not a jarvos-sync profile"
+    rm -rf "${SYNC_DIR:?}"
+    mkdir -p "$(dirname "$SYNC_DIR")"
+    mv "$clone" "$SYNC_DIR"
+
+    say "restoring from $src"
+    say ""
+    say "[1/4] packages"
+    restore_packages "$SYNC_DIR"
+    phase_begin "dotfiles" 2 "applying the dotfile delta"
+    say "[2/4] dotfiles"
+    restore_dotfiles "$SYNC_DIR"
+    phase_begin "units" 3 "enabling units"
+    say "[3/4] units"
+    restore_units "$SYNC_DIR"
+    phase_begin "post" 4 "post-install steps"
+    say "[4/4] post"
+    restore_post "$SYNC_DIR"
+
+    say ""
+    if [[ $DRY_RUN -eq 1 ]]; then
+        say "dry run — nothing was changed. packages: $RESTORE_PKGS would install," \
+            "dotfiles: $RESTORE_DOTS would change, units: $RESTORE_UNITS would enable"
+    else
+        say "restore complete — packages: $RESTORE_PKGS new, dotfiles: $RESTORE_DOTS changed, units: $RESTORE_UNITS enabled"
+        [[ -n "$BACKUP_DIR" ]] && say "overwritten files were backed up to $BACKUP_DIR"
+    fi
+    progress "done" "post" 4 "$STEP" "restore complete" 0
+}
+
+usage() {
+    cat <<EOF
+$PROG $VERSION — carry your machine to the next machine.
+
+USAGE
+  jarvos-sync init [--repo NAME | --local PATH] [--dir PATH]
+        Seed a private profile repo from this box: the package delta, the
+        dotfile delta, the units you enabled, and a manifest naming the
+        secrets you must bring yourself.
+
+  jarvos-sync push [-m MSG] [--dir PATH]
+        Re-capture and push. Safe to run whenever the machine changes.
+
+  jarvos-sync status [--dir PATH]
+        Show what drifted between this machine and the profile.
+
+  jarvos-sync restore <repo-url|path> [--dry-run] [--force] [--dir PATH]
+        On a fresh box: install the packages, apply the dotfile delta, enable
+        the units, then print exactly what still needs a secret. Re-runnable;
+        files it would overwrite are backed up to
+        ~/.jarvos-sync-backup/<timestamp>/ unless --force is given.
+
+  jarvos-sync capture --into PATH
+        Stage the profile without git. Mostly for tests and inspection.
+
+OPTIONS
+  --dry-run     show what would happen, change nothing
+  --force       overwrite without taking a backup
+  --progress    machine-readable only: quiet stdout, JSON in the progress file
+  --help, --version
+
+ENVIRONMENT
+  JARVOS_ROOT              the JarvOS tree holding system/continuity manifests
+  JARVOS_SYNC_DIR          profile working copy (default ~/.local/share/jarvos/profile)
+  JARVOS_SYNC_PROGRESS     progress JSON path (default \$XDG_RUNTIME_DIR/jarvos-sync/progress.json)
+  JARVOS_SYNC_MAX_FILE_MB  per-file cap, default 5
+
+NEVER SYNCED, by construction: ~/.secrets, keys, tokens, .env files, shell and
+agent history, machine-id, monitors.conf, colours generated from the wallpaper.
+EOF
+}
+
+main() {
+    local cmd="${1:-}"
+    [[ $# -gt 0 ]] && shift || true
+    case "$cmd" in
+        -h|--help|help|"") usage; exit 0 ;;
+        -V|--version|version) printf '%s %s\n' "$PROG" "$VERSION"; exit 0 ;;
+    esac
+
+    TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/jarvos-sync.XXXXXX")"
+    mkdir -p "$STATE_DIR"
+    ACTION="$cmd"
+    LOG_FILE="$STATE_DIR/jarvos-sync-$cmd.log"
+
+    # --progress is the machine-readable mode the Setup app drives: the JSON
+    # file is the only channel, so send everything else to the log it names.
+    local a
+    for a in "$@"; do
+        [[ "$a" == "--progress" ]] || continue
+        # stdout is the log from here on; `say` still speaks, into the file.
+        exec >>"$LOG_FILE" 2>&1
+        break
+    done
+
+    progress "running" "init" 1 0 "starting $cmd"
+    resolve_root
+    load_manifests
+
+    case "$cmd" in
+        capture) cmd_capture "$@" ;;
+        init) cmd_init "$@" ;;
+        push) cmd_push "$@" ;;
+        status) cmd_status "$@" ;;
+        restore) cmd_restore "$@" ;;
+        *) usage >&2; die "unknown command: $cmd" ;;
+    esac
+}
+
+main "$@"
