@@ -18,12 +18,14 @@ seed_home() {
     home_file .config/hypr/hyprland/monitors.conf <<<'monitor=DP-1,3440x1440@144,0x0,1'
     home_file .config/hypr/hyprland/colors.conf <<<'$primary = rgb(ff0000)'
     home_file .config/hypr/hyprland/scheme/current.conf <<<'scheme = dynamic'
-    # secret-shaped -> never captured
-    home_file .config/fish/conf.d/keys.env <<<'OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz012345'
-    home_file .claude/.credentials.json <<<'{"token":"ghp_abcdefghijklmnopqrstuvwxyz0123456789"}'
+    # Secret-shaped -> never captured. The values are assembled at runtime by
+    # the fake_* helpers in lib/sandbox.sh, so the tool is fed the real shapes
+    # while this file carries no secret-shaped literal of its own.
+    printf 'OPENAI_API_KEY=%s\n' "$(fake_openai_key)" | home_file .config/fish/conf.d/keys.env
+    printf '{"token":"%s"}\n' "$(fake_github_token)" | home_file .claude/.credentials.json
     home_file .claude/history.jsonl <<<'{"prompt":"my private prompt"}'
-    home_file .secrets/.env.central <<<'AWS_KEY=AKIAIOSFODNN7EXAMPLE'
-    home_file .ssh/id_ed25519 <<<'-----BEGIN OPENSSH PRIVATE KEY-----'
+    printf 'AWS_KEY=%s\n' "$(fake_aws_key)" | home_file .secrets/.env.central
+    fake_private_key | home_file .ssh/id_ed25519
     home_file .bash_history <<<'sudo rm -rf /'
     home_file .claude/.current_system.json <<<'{"hostname":"thisbox"}'
     # portable claude assets -> captured (the chairman's ".claude and fly")
@@ -117,18 +119,8 @@ test_claude_assets_captured() {
 }
 
 test_staged_tree_has_no_secret_strings() {
-    start_test "staged tree contains no secret-shaped string (grep gate)"
-    local hits
-    hits="$(grep -rIEl \
-        -e 'AKIA[0-9A-Z]{16}' \
-        -e 'gh[pousr]_[A-Za-z0-9]{20,}' \
-        -e 'sk-[A-Za-z0-9]{20,}' \
-        -e 'BEGIN (RSA|OPENSSH|EC|DSA|PGP) PRIVATE KEY' \
-        "$STAGE" 2>/dev/null || true)"
-    if [[ -n "$hits" ]]; then
-        fail_test "secret-shaped content staged in: $hits"
-        return
-    fi
+    start_test "staged tree contains no secret-shaped string (content gate)"
+    assert_no_secret_shaped_content "$STAGE" || return
     pass_test
 }
 
@@ -183,8 +175,8 @@ test_secrets_manifest_names_only() {
     assert_file_exists "$STAGE/secrets.manifest" || return
     assert_contains "$STAGE/secrets.manifest" '.secrets/.env.central' || return
     assert_contains "$STAGE/secrets.manifest" 'GITHUB_TOKEN' || return
-    assert_not_contains "$STAGE/secrets.manifest" 'AKIAIOSFODNN7EXAMPLE' || return
-    assert_not_contains "$STAGE/secrets.manifest" 'ghp_' || return
+    assert_not_contains "$STAGE/secrets.manifest" "$(fake_aws_key)" || return
+    assert_not_contains "$STAGE/secrets.manifest" "$(fake_github_token)" || return
     pass_test
 }
 
