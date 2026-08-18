@@ -1,0 +1,76 @@
+# JarvOS continuity — dotfile allow-list.
+#
+# Home-relative paths (files or directories) that `jarvos-sync` is allowed to
+# look at. Nothing outside this list is ever read, staged, or pushed: the map
+# is explicit, never guessed. Every path here is still filtered through
+# `dotfiles.deny` and compared against the JarvOS baseline, so only the delta
+# (what differs from what the distro ships) ends up in the profile repo.
+#
+# Format: one path per line, '#' comments, blank lines ignored.
+# Add your own lines in the profile repo's `dotfiles.allow.local` to extend it.
+
+# ── the desktop the distro ships (delta only) ────────────────────────────
+.config/hypr
+.config/fish
+.config/kitty
+.config/fastfetch
+.config/fuzzel
+.config/gammastep
+.config/matugen
+.config/kde-material-you-colors
+.config/Kvantum
+.config/wlogout
+.config/xdg-desktop-portal
+.config/fontconfig
+.config/caelestia
+
+# ── desktop state the distro does not ship but the user shapes ───────────
+.config/gtk-3.0
+.config/gtk-4.0
+.config/nvim
+.config/btop
+.config/starship.toml
+.config/user-dirs.dirs
+.config/mimeapps.list
+.config/systemd/user
+.local/share/applications
+.local/bin
+Pictures/Wallpapers
+
+# ── shell / git / editor identity ────────────────────────────────────────
+.gitconfig
+.gitignore_global
+.tmux.conf
+.editorconfig
+.inputrc
+
+# ── the agentic layer: "clone .claude and fly" ───────────────────────────
+# Content only. Caches, transcripts, credentials and plugin checkouts are
+# denied in dotfiles.deny — plugins are re-fetched on restore from their
+# manifests, which is why installed_plugins.json matters and cache/ does not.
+.claude/CLAUDE.md
+.claude/SOUL.md
+.claude/USER.md
+.claude/SELFEVAL.md
+.claude/README.md
+.claude/settings.json
+.claude/keybindings.json
+.claude/agents
+.claude/commands
+.claude/skills
+.claude/hooks
+.claude/rules
+.claude/scripts
+.claude/wiki
+.claude/okf
+.claude/mcp
+.claude/mcp-presets
+.claude/plugins/config.json
+.claude/plugins/installed_plugins.json
+.claude/plugins/known_marketplaces.json
+.claude/plugins/blocklist.json
+
+# ── sibling agent harnesses generated from the same identity ─────────────
+.codex/AGENTS.md
+.config/opencode
+.gemini/GEMINI.md

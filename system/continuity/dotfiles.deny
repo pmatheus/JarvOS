@@ -1,0 +1,151 @@
+# JarvOS continuity — denylist. Wins over dotfiles.allow, always.
+#
+# Patterns are bash `[[ path == pattern ]]` globs matched against the
+# HOME-RELATIVE path. Note that `*` crosses `/` here, so `*.env` matches
+# `.config/fish/conf.d/keys.env` and `.claude/projects/*` matches everything
+# below that directory.
+#
+# The rule of the file: err towards refusing. A skipped file costs the user one
+# manual copy; a leaked one costs a rotation. Denials are counted and reported,
+# never silent.
+
+# ── secrets: excluded by construction, never staged, never read ──────────
+.secrets/*
+*/.secrets/*
+.env
+.env.*
+*.env
+*/.env
+*/.env.*
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+*.jks
+*.keystore
+*.kdbx
+*.gpg
+*.asc
+*.ovpn
+*.mobileconfig
+id_rsa*
+*/id_rsa*
+id_ed25519*
+*/id_ed25519*
+id_ecdsa*
+*/id_ecdsa*
+id_dsa*
+*/id_dsa*
+.netrc
+*/.netrc
+.git-credentials
+*/.git-credentials
+.npmrc
+.pypirc
+.ssh/*
+.gnupg/*
+.aws/*
+.azure/*
+.config/gcloud/*
+.docker/config.json
+.password-store/*
+# Name-shaped denial, restricted to data files. Deliberately NOT bare `*token*`:
+# that also swallows source the user wants (`hooks/redact-secret-output.py`,
+# `skills/vault-working/`). Source files are instead policed by the content gate
+# in `secret-patterns.txt`, which refuses any file carrying a secret-shaped
+# string whatever it is called.
+*credentials.json
+*.credentials.json
+*token*.json
+*token*.txt
+*token*.conf
+*token*.ini
+*token*.yaml
+*token*.yml
+*secret*.json
+*secret*.txt
+*secret*.conf
+*secret*.ini
+*secret*.yaml
+*secret*.yml
+*password*.json
+*password*.txt
+*password*.conf
+*apikey*.json
+*api_key*.json
+secrets-catalog.md
+*/secrets-catalog.md
+
+# ── history, transcripts and other personal traces ───────────────────────
+.bash_history
+.zsh_history
+.python_history
+.node_repl_history
+.lesshst
+*_history
+*/fish_history
+*.jsonl
+.claude/projects/*
+.claude/todos/*
+.claude/sessions/*
+.claude/session-env/*
+.claude/paste-cache/*
+.claude/file-history/*
+.claude/shell-snapshots/*
+.claude/statsig/*
+.claude/logs/*
+.claude/debug/*
+.claude/cache/*
+.claude/backups/*
+.claude/jobs/*
+.claude/daemon/*
+.claude/ide/*
+.claude/.claude.json*
+.claude/security_warnings_state_*
+.claude/.last-*
+.claude/agent-memory/*
+.claude/memory/*
+
+# ── host-specific state: the new machine regenerates all of it ───────────
+*/monitors.conf
+monitors.conf
+*/colors.conf
+colors.conf
+*/scheme/*
+*machine-id*
+.claude/.current_system.json*
+.claude/.arsenal-manifest.json
+.config/hypr/hyprland/custom/monitors.conf
+.local/state/*
+
+# ── re-fetchable checkouts and caches (restored from their manifests) ────
+.claude/plugins/cache/*
+.claude/plugins/marketplaces/*
+.claude/plugins/data/*
+.claude/plugins/install-counts-cache.json
+*/node_modules/*
+*/__pycache__/*
+*/.venv/*
+*/venv/*
+*/.mypy_cache/*
+*/.ruff_cache/*
+*/.pytest_cache/*
+.git/*
+*/.git/*
+
+# ── churn ────────────────────────────────────────────────────────────────
+*.log
+*.tmp
+*.swp
+*.pyc
+*.bak
+*.bak-*
+*.broken-*
+*.orig
+*.rej
+*~
+*.sock
+*.socket
+*.pid
+.DS_Store

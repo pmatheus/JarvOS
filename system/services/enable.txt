@@ -17,7 +17,8 @@ user xdg-user-dirs.service core
 user gnome-keyring-daemon.socket core
 
 # --- JarvOS shell helpers ---
-user quickshell-jarvos.service core
+# quickshell-jarvos.service is deliberately NOT enabled: Hyprland starts it from
+# execs.conf (`systemctl --user start`) so the shell lives and dies with the session.
 user jarvos-monitor-layout.path core
 
 # --- optional (hardware / virt / remote / snapshots) ---
