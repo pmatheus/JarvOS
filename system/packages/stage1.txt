@@ -27,10 +27,24 @@ grub
 efibootmgr
 # The installer lays the target out as btrfs with @/@home/@log/@pkg subvolumes,
 # so the installed system needs the userspace tools to manage what it boots from.
-# Snapshot tooling (snapper, timeshift, grub-btrfs) is a first-run module: it
-# changes nothing about how the desktop looks, and half-configured snapshots are
-# worse than an explicit choice.
 btrfs-progs
+
+# NOT here, and deliberately: snapper, snap-pac, timeshift, timeshift-autosnap,
+# grub-btrfs, btrfs-assistant. They change nothing about how the desktop looks,
+# and the snapshot wiring this repo inherited is self-contradictory -- whoever
+# writes the module that offers them has to resolve this first:
+#
+#   install.sh:178              grub-btrfsd --syslog --timeshift-auto
+#                               (grub-btrfs watching TIMESHIFT's snapshots)
+#   system/services/enable.txt  snapper-timeline.timer, snapper-cleanup.timer
+#                               (SNAPPER's timers, optional tier)
+#
+# Two different snapshot tools pointed at the same subvolumes: snapper takes the
+# snapshots on a timer while the boot menu only ever lists timeshift's. Nothing
+# conflicts today because stage 1 installs neither, but a module that installs
+# one and inherits the other's wiring ships a machine whose rollback entries are
+# silently empty. Pick one tool, wire grub-btrfsd and the timers to it, and drop
+# the other's leftovers.
 
 # === LOGIN MANAGER ===
 sddm
