@@ -150,14 +150,10 @@ grub-btrfs
 efibootmgr
 
 # === APPS ===
-ferdium-bin
 obsidian
-spotify
-zen-browser-bin
 qalculate-gtk
 nautilus
 nautilus-open-any-terminal
-visual-studio-code-bin
 loupe
 
 # === LANGUAGE SUPPORT ===
