@@ -128,7 +128,7 @@ Item {
             Layout.fillHeight: true
 
             clip: true
-            contentHeight: cards.height
+            contentHeight: cards.implicitHeight
             flickableDirection: Flickable.VerticalFlick
 
             StyledScrollBar.vertical: StyledScrollBar {
@@ -138,7 +138,11 @@ Item {
             ColumnLayout {
                 id: cards
 
+                // A Flickable does not lay out its children, so the column has
+                // to size itself — without this the list silently stops
+                // scrolling once the cards outgrow the viewport.
                 width: flickable.width - Appearance.padding.small
+                height: implicitHeight
                 spacing: Appearance.spacing.normal
 
                 Repeater {

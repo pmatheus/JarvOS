@@ -107,6 +107,11 @@ vagrant
 
 [post]
 # The Python side of the toolkit lives in uv tools on the reference box.
+# CONTRACT: jarvos-sync reads the tool names below out of this [post] section
+# to decide which uv tools the distro already provides, so a user's profile
+# only carries the ones they added themselves. Keep them named literally in
+# this loop — moving them to a variable or another section would make the
+# profile re-carry all 23.
 for t in ad-miner analyzemft arjun bloodyad certipy-ad coercer dissect-target \
     donpapi enum4linux-ng flare-floss frida-tools hashid ldapdomaindump lsassy \
     mitm6 name-that-hash objection plaso pypykatz ropper sigma-cli volatility3 yarp; do
