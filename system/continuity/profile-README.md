@@ -21,4 +21,3 @@ On a fresh machine:
 Re-runnable: it installs only what is missing, backs up anything it would
 overwrite into `~/.jarvos-sync-backup/<timestamp>/`, and never touches
 host-specific state (`monitors.conf`, `colors.conf`, machine-id, keys, history).
-EOF
