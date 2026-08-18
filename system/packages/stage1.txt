@@ -1,0 +1,149 @@
+# JarvOS — stage 1: the packages the desktop needs to come up looking right.
+#
+# Installed with pacman only (official repos + the [jarvos] binary repo).
+# Nothing here may compile on the user's machine: every AUR name below must be
+# published as a prebuilt package in [jarvos].
+#
+# Everything else — browsers, editors, the security toolkit, the AI stack, CJK
+# fonts, OCR, recording extras — lives in system/modules/*.module and is offered
+# by the JarvOS Setup app at first login. Adding a package here costs install
+# time for every user, so add only what a blank first boot would miss.
+#
+# One package per line, '#' comments and blank lines ignored.
+
+# === BASE SYSTEM ===
+base
+linux
+linux-firmware
+sudo
+git
+jq
+bc
+curl
+networkmanager
+
+# === BOOT ===
+grub
+efibootmgr
+
+# === LOGIN MANAGER ===
+sddm
+
+# === HYPRLAND ===
+hyprland
+hypridle
+hyprlock
+hyprpicker
+hyprland-qt-support
+xdg-desktop-portal
+xdg-desktop-portal-hyprland
+xdg-desktop-portal-gtk
+xdg-user-dirs
+xdg-utils
+polkit-gnome
+gnome-keyring
+
+# === JARVOS SHELL (quickshell / Caelestia) ===
+# caelestia-shell provides the Caelestia.* QML plugins the JarvOS shell imports,
+# and hard-depends on quickshell-git, caelestia-cli, app2unit, libcava, fish,
+# ddcutil, brightnessctl, lm_sensors, swappy, libqalculate and
+# power-profiles-daemon. They are listed explicitly anyway so an orphan sweep
+# never removes them.
+caelestia-shell
+caelestia-cli
+quickshell-git
+app2unit
+libcava
+power-profiles-daemon
+
+# === QT / GTK ===
+qt6-base
+qt6-declarative
+qt6-wayland
+qt6-svg
+qt6-imageformats
+qt6-avif-image-plugin
+qt6gtk2
+gtk4
+libadwaita
+adw-gtk-theme-git
+gsettings-desktop-schemas
+
+# === FONTS ===
+# Only the families the shell and hyprlock actually name. Rubik is the shell
+# sans and clock and a hard dependency of caelestia-shell; Gabarito and
+# JetBrainsMono Nerd are hyprlock's; CaskaydiaCove Nerd is the shell mono;
+# Material Symbols Rounded is every icon in the UI. ttf-rubik-vf rather than
+# ttf-google-fonts-typewolf: the same font, without the other 39 families and
+# the 114 MiB they cost.
+ttf-rubik-vf
+ttf-gabarito-git
+ttf-material-symbols-variable
+ttf-cascadia-code-nerd
+ttf-jetbrains-mono-nerd
+noto-fonts
+noto-fonts-emoji
+
+# === COLOURS & WALLPAPER ===
+# awww is the wallpaper daemon the dotfiles drive (upstream renamed swww).
+awww
+matugen-bin
+kde-material-you-colors
+python-materialyoucolor
+python-pywal16
+python-pillow
+python-numpy
+uv
+
+# === CURSOR ===
+bibata-cursor-theme-bin
+
+# === AUDIO ===
+pipewire
+pipewire-pulse
+pipewire-alsa
+wireplumber
+pavucontrol-qt
+
+# === HARDWARE / SESSION SERVICES ===
+brightnessctl
+ddcutil
+lm_sensors
+upower
+bluez
+bluez-utils
+libnotify
+
+# === SCREENSHOT / CLIPBOARD / INPUT ===
+grim
+slurp
+grimblast-git
+swappy
+satty
+wl-clipboard
+cliphist
+wlogout
+wtype
+ydotool
+gpu-screen-recorder
+
+# === SHELL HELPERS ===
+libqalculate
+libxml2
+pacman-contrib
+
+# === TERMINAL & FIRST-LIGHT CLI ===
+kitty
+fish
+starship
+fastfetch
+fzf
+bat
+eza
+zoxide
+ripgrep
+btop
+
+# === APPS THE SHELL LAUNCHES BY DEFAULT ===
+nautilus
+mpv
