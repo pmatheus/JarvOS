@@ -9,6 +9,7 @@
 set -euo pipefail
 
 VERSION="0.1.0"
+# shellcheck disable=SC2034  # read by the sourced libs in scripts/lib/
 PROFILE_SCHEMA=1
 PROG="${0##*/}"
 
@@ -16,8 +17,10 @@ PROG="${0##*/}"
 
 JARVOS_ROOT="${JARVOS_ROOT:-}"
 SYNC_DIR="${JARVOS_SYNC_DIR:-$HOME/.local/share/jarvos/profile}"
+PROFILE_SRC=""
 STATE_DIR="$HOME/.local/state/jarvos"
 MAX_FILE_MB="${JARVOS_SYNC_MAX_FILE_MB:-5}"
+# shellcheck disable=SC2034  # read by the sourced libs in scripts/lib/
 BACKUP_ROOT="$HOME/.jarvos-sync-backup"
 
 PROGRESS_FILE="${JARVOS_SYNC_PROGRESS:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/jarvos-sync/progress.json}"
@@ -26,6 +29,14 @@ LOG_FILE=""
 DRY_RUN=0
 FORCE=0
 QUIET=0
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+LIB_DIR="$(dirname "$SELF")/lib"
+for _lib in jarvos-sync-profile jarvos-sync-restore; do
+    [[ -r "$LIB_DIR/$_lib.sh" ]] || { printf '%s: missing %s\n' "${0##*/}" "$LIB_DIR/$_lib.sh" >&2; exit 1; }
+    # shellcheck source=/dev/null
+    source "$LIB_DIR/$_lib.sh"
+done
 
 TMP_ROOT=""
 DENY_PATTERNS=()
@@ -66,21 +77,14 @@ progress() {
     dir="$(dirname "$PROGRESS_FILE")"
     mkdir -p "$dir" 2>/dev/null || return 0
     tmp="$(mktemp "$dir/.progress.XXXXXX")" || return 0
-    printf '{\n' >"$tmp"
-    printf '  "tool": "jarvos-sync",\n' >>"$tmp"
-    printf '  "action": "%s",\n' "$ACTION" >>"$tmp"
-    printf '  "status": "%s",\n' "$status" >>"$tmp"
-    printf '  "phase": "%s",\n' "$phase" >>"$tmp"
-    printf '  "phase_index": %s,\n' "$idx" >>"$tmp"
-    printf '  "phase_total": %s,\n' "$PHASE_TOTAL" >>"$tmp"
-    printf '  "step": %s,\n' "$step" >>"$tmp"
-    printf '  "step_total": %s,\n' "$STEP_TOTAL" >>"$tmp"
-    printf '  "message": "%s",\n' "${msg//\"/\'}" >>"$tmp"
-    printf '  "exit_code": %s,\n' "$code" >>"$tmp"
-    printf '  "log": "%s",\n' "$LOG_FILE" >>"$tmp"
-    printf '  "secrets_manifest": "%s",\n' "$SYNC_DIR/secrets.manifest" >>"$tmp"
-    printf '  "updated": "%s"\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$tmp"
-    printf '}\n' >>"$tmp"
+    printf '{\n  "tool": "jarvos-sync",\n  "action": "%s",\n  "status": "%s",\n  "phase": "%s",\n' \
+        "$ACTION" "$status" "$phase" >"$tmp"
+    printf '  "phase_index": %s,\n  "phase_total": %s,\n  "step": %s,\n  "step_total": %s,\n' \
+        "$idx" "$PHASE_TOTAL" "$step" "$STEP_TOTAL" >>"$tmp"
+    printf '  "message": "%s",\n  "exit_code": %s,\n  "log": "%s",\n' \
+        "${msg//\"/\'}" "$code" "$LOG_FILE" >>"$tmp"
+    printf '  "secrets_manifest": "%s",\n  "updated": "%s"\n}\n' \
+        "${PROFILE_SRC:-$SYNC_DIR}/secrets.manifest" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$tmp"
     mv -f "$tmp" "$PROGRESS_FILE"
 }
 
@@ -237,6 +241,90 @@ capture_packages() {
     [[ -s "$b" ]] || warn "baseline package list is empty — every explicit package looks like a delta"
 }
 
+# uv tools are not pacman packages, but hypr-box — the AI layer this distro is
+# named for — is one, so they have to travel too.
+#
+# `uv tool list` prints one package line per tool with its executables indented
+# under it. An executable is not a tool: `volatility3` installs `vol`, and
+# capturing `vol` would ask the new machine for a package that does not exist.
+uv_installed_tools() {
+    command -v uv >/dev/null 2>&1 || return 0
+    uv tool list 2>/dev/null | awk '$1 !~ /^-/ && $2 ~ /^v/ { print $1 }'
+}
+
+# The uv tools a module's [post] block installs. Neither shape in the catalogue
+# names the tool in the install command itself — security.module loops over a
+# list (`for t in a b …; do uv tool install "$t"`) and ai.module installs a
+# local checkout by path (`src=…/hypr-box; uv tool install "$src"`) — so the
+# variable is traced back to whatever set it, and a path down to its last
+# component. Only what [post] *installs* counts: a name it merely mentions
+# (`usermod -aG docker,libvirt`) is not a uv tool the catalogue provides, and a
+# name in [packages] is a pacman package — the uv tool that happens to share
+# its name is a different artefact, and the user's copy still has to travel.
+module_uv_tools() {
+    awk '
+        function emit(w,   n, a) {
+            gsub(Q, "", w); sub(/\/+$/, "", w)
+            n = split(w, a, "/")
+            if (a[n] != "" && a[n] !~ /\$/ && a[n] !~ /^-/) print a[n]
+        }
+        function handle(s,   v, rest, w, n, m, i, j, a, b) {
+            if (s ~ /^[[:space:]]*\[[a-z_]+\][[:space:]]*$/) { post = (s ~ /\[post\]/); return }
+            if (!post || s ~ /^[[:space:]]*#/) return
+            if (match(s, /^[[:space:]]*for[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]+in[[:space:]]+/)) {
+                rest = substr(s, RLENGTH + 1); sub(/;.*$/, "", rest)
+                v = s; sub(/^[[:space:]]*for[[:space:]]+/, "", v); sub(/[[:space:]].*$/, "", v)
+                set[v] = set[v] " " rest; return
+            }
+            if (match(s, /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=/)) {
+                v = substr(s, 1, RLENGTH - 1); sub(/^[[:space:]]*/, "", v)
+                set[v] = set[v] " " substr(s, RLENGTH + 1); return
+            }
+            i = index(s, "uv tool install")
+            if (i == 0) return
+            rest = substr(s, i + length("uv tool install"))
+            sub(/[;|&#].*$/, "", rest)
+            n = split(rest, a, /[[:space:]]+/)
+            for (i = 1; i <= n; i++) {
+                w = a[i]; gsub(Q, "", w)
+                if (w == "" || w ~ /^-/) continue
+                if (w ~ /^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?$/) {
+                    v = w; gsub(/[${}]/, "", v)
+                    m = split(set[v], b, /[[:space:]]+/)
+                    for (j = 1; j <= m; j++) emit(b[j])
+                } else emit(w)
+            }
+        }
+        BEGIN { Q = "[\"" sprintf("%c", 39) "]" }
+        {
+            line = line $0
+            if (line ~ /\\[[:space:]]*$/) { sub(/\\[[:space:]]*$/, " ", line); next }
+            handle(line); line = ""
+        }
+        END { if (line != "") handle(line) }
+    ' "$1"
+}
+
+baseline_uv_tools() {
+    local f
+    for f in "$JARVOS_ROOT"/system/modules/*.module; do
+        [[ -f "$f" ]] || continue
+        module_uv_tools "$f"
+    done
+}
+
+# Always writes the list, uv or no uv: `status` diffs a fresh capture against
+# the profile, and a file that exists on one machine and not on another is
+# drift the user cannot act on.
+capture_uv_tools() {
+    local stage="$1" have base
+    mkdir -p "$stage/packages"
+    have="$TMP_ROOT/uv.have"; base="$TMP_ROOT/uv.base"
+    uv_installed_tools | sort -u >"$have"
+    baseline_uv_tools | sort -u >"$base"
+    comm -23 "$have" "$base" >"$stage/packages/uv-tools.txt"
+}
+
 capture_units() {
     local stage="$1" scope f base unit
     mkdir -p "$stage/units"
@@ -272,79 +360,6 @@ capture_dconf() {
     [[ -s "$stage/dconf/user.dconf" ]] || rm -f "$stage/dconf/user.dconf"
 }
 
-write_secrets_manifest() {
-    local stage="$1" out="$1/secrets.manifest" line target
-    {
-        printf '# JarvOS profile — secrets manifest.\n'
-        printf '#\n'
-        printf '# Names and locations only. No value from this list is in this repo.\n'
-        printf '# Generated by %s %s. Deterministic on purpose: no timestamp, so a\n' "$PROG" "$VERSION"
-        printf '# re-capture that found nothing new produces no diff.\n\n'
-        printf '## Bring these from your vault\n\n'
-        while IFS= read -r line; do
-            target="${line%%|*}"; target="${target%"${target##*[![:space:]]}"}"
-            if [[ -e "${target/#\~/$HOME}" ]]; then
-                printf '%s | PRESENT on the source machine\n' "$line"
-            else
-                printf '%s | absent on the source machine\n' "$line"
-            fi
-        done < <(manifest_lines "$JARVOS_ROOT/system/continuity/secrets.manifest.in")
-
-        printf '\n## Environment variables the synced dotfiles expect\n\n'
-        grep -rhoIE '\$\{?[A-Z][A-Z0-9_]{2,}\}?' "$stage/dotfiles" 2>/dev/null |
-            tr -d '${}' | sort -u |
-            grep -E '(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_KEY|APIKEY|_KEY$|_KEYS$|_PASS$)' |
-            sed 's/^/$/' || printf '(none referenced)\n'
-
-        if [[ ${#SKIPPED_SECRET[@]} -gt 0 ]]; then
-            printf '\n## Refused by the content gate (they hold secret-shaped strings)\n\n'
-            printf '%s\n' "${SKIPPED_SECRET[@]}"
-        fi
-    } >"$out"
-}
-
-write_notes() {
-    local stage="$1"
-    {
-        printf '# What jarvos-sync deliberately left behind\n\n'
-        printf 'Denied by system/continuity/dotfiles.deny: %d file(s).\n' "$DENIED_COUNT"
-        printf 'Paths are not listed: the denylist covers secrets, history and\n'
-        printf 'transcripts, and their names are themselves personal.\n\n'
-        printf '## Symlinks (not portable; recreate by hand if you want them)\n\n'
-        if [[ ${#SKIPPED_LINK[@]} -gt 0 ]]; then printf '%s\n' "${SKIPPED_LINK[@]}"; else printf '(none)\n'; fi
-        printf '\n## Larger than %s MiB (raise JARVOS_SYNC_MAX_FILE_MB to include)\n\n' "$MAX_FILE_MB"
-        if [[ ${#SKIPPED_SIZE[@]} -gt 0 ]]; then printf '%s\n' "${SKIPPED_SIZE[@]}"; else printf '(none)\n'; fi
-        printf '\n## Host-specific state the new machine regenerates\n\n'
-        printf 'monitors.conf, colors.conf, scheme/, .local/state, machine-id.\n'
-    } >"$stage/notes.txt"
-}
-
-write_profile_json() {
-    local stage="$1" pkgs aur units_s units_u dots
-    pkgs="$(wc -l <"$stage/packages/explicit.txt")"
-    aur="$(wc -l <"$stage/packages/aur.txt")"
-    units_s="$(wc -l <"$stage/units/system.txt")"
-    units_u="$(wc -l <"$stage/units/user.txt")"
-    dots="$(find "$stage/dotfiles" -type f | wc -l)"
-    cat >"$stage/jarvos-profile.json" <<EOF
-{
-  "schema": $PROFILE_SCHEMA,
-  "tool": "jarvos-sync",
-  "version": "$VERSION",
-  "jarvos_release": "$(cat /etc/jarvos-release 2>/dev/null | head -1 || echo unknown)",
-  "packages": { "explicit": $pkgs, "aur": $aur },
-  "units": { "system": $units_s, "user": $units_u },
-  "dotfiles": { "files": $dots, "denied": $DENIED_COUNT,
-    "skipped_symlink": ${#SKIPPED_LINK[@]}, "skipped_size": ${#SKIPPED_SIZE[@]},
-    "skipped_secret": ${#SKIPPED_SECRET[@]} }
-}
-EOF
-}
-
-write_readme() {
-    cp "$JARVOS_ROOT/system/continuity/profile-README.md" "$1/README.md"
-}
-
 # Build a complete profile tree at $1 (replacing its content, keeping .git).
 do_capture() {
     local dest="$1" build="$TMP_ROOT/build" item
@@ -353,6 +368,7 @@ do_capture() {
     capture_dotfiles "$build"
     phase_begin "packages" 2 "comparing packages against the JarvOS baseline"
     capture_packages "$build"
+    capture_uv_tools "$build"
     phase_begin "units" 3 "reading enabled units"
     capture_units "$build"
     capture_dconf "$build"
@@ -368,110 +384,6 @@ do_capture() {
         rm -rf "${dest:?}/$item"
         [[ -e "$build/$item" ]] && mv "$build/$item" "$dest/$item"
     done
-}
-
-# ── restore ──────────────────────────────────────────────────────────────
-
-RESTORE_PKGS=0
-RESTORE_DOTS=0
-RESTORE_UNITS=0
-BACKUP_DIR=""
-
-as_root() { if [[ $EUID -eq 0 ]]; then "$@"; else sudo "$@"; fi; }
-
-restore_packages() {
-    local src="$1" want missing repo aur
-    [[ -f "$src/packages/explicit.txt" ]] || return 0
-    want="$TMP_ROOT/want"; missing="$TMP_ROOT/missing"
-    repo="$TMP_ROOT/repo.pkgs"; aur="$TMP_ROOT/aur.want"
-    sort -u "$src/packages/explicit.txt" >"$want"
-    comm -23 "$want" <(pacman -Qq 2>/dev/null | sort -u) >"$missing"
-    RESTORE_PKGS="$(wc -l <"$missing")"
-    [[ "$RESTORE_PKGS" -eq 0 ]] && { say "  packages: nothing missing"; return 0; }
-    sort -u "$src/packages/aur.txt" 2>/dev/null >"$TMP_ROOT/aur.all" || : >"$TMP_ROOT/aur.all"
-    comm -12 "$missing" "$TMP_ROOT/aur.all" >"$aur"
-    comm -23 "$missing" "$aur" >"$repo"
-    if [[ $DRY_RUN -eq 1 ]]; then
-        say "  packages: would install $RESTORE_PKGS ($(wc -l <"$repo") repo, $(wc -l <"$aur") AUR)"
-        return 0
-    fi
-    if [[ -s "$repo" ]]; then
-        say "  packages: installing $(wc -l <"$repo") from the repos"
-        # shellcheck disable=SC2046  # word splitting is the interface
-        as_root pacman -S --needed --noconfirm $(tr '\n' ' ' <"$repo") || warn "some repo packages failed"
-    fi
-    if [[ -s "$aur" ]]; then
-        if command -v yay >/dev/null 2>&1; then
-            say "  packages: installing $(wc -l <"$aur") from the AUR"
-            # shellcheck disable=SC2046
-            yay -S --needed --noconfirm $(tr '\n' ' ' <"$aur") || warn "some AUR packages failed"
-        else
-            warn "yay is missing; skipping $(wc -l <"$aur") AUR package(s)"
-        fi
-    fi
-}
-
-restore_dotfiles() {
-    local src="$1/dotfiles" rel target
-    [[ -d "$src" ]] || return 0
-    while IFS= read -r -d '' f; do
-        rel="${f#"$src"/}"
-        target="$HOME/$rel"
-        if [[ -f "$target" ]] && cmp -s "$f" "$target"; then continue; fi
-        RESTORE_DOTS=$((RESTORE_DOTS + 1))
-        STEP=$((STEP + 1))
-        if [[ $DRY_RUN -eq 1 ]]; then
-            say "  would write ~/$rel"
-            continue
-        fi
-        if [[ -e "$target" && $FORCE -eq 0 ]]; then
-            [[ -z "$BACKUP_DIR" ]] && BACKUP_DIR="$BACKUP_ROOT/$(date +%Y%m%d-%H%M%S)"
-            mkdir -p "$BACKUP_DIR/$(dirname "$rel")"
-            cp -p "$target" "$BACKUP_DIR/$rel"
-            say "  backed up ~/$rel"
-        fi
-        mkdir -p "$(dirname "$target")"
-        cp -p "$f" "$target"
-        progress "running" "$PHASE" "$PHASE_INDEX" "$STEP" "restored $rel"
-    done < <(find "$src" -type f -print0 2>/dev/null)
-}
-
-restore_units() {
-    local src="$1/units" scope unit
-    for scope in system user; do
-        [[ -f "$src/$scope.txt" ]] || continue
-        while IFS= read -r unit; do
-            [[ -n "$unit" ]] || continue
-            if [[ "$scope" == user ]]; then
-                systemctl --user is-enabled "$unit" >/dev/null 2>&1 && continue
-            else
-                systemctl is-enabled "$unit" >/dev/null 2>&1 && continue
-            fi
-            RESTORE_UNITS=$((RESTORE_UNITS + 1))
-            if [[ $DRY_RUN -eq 1 ]]; then say "  would enable $scope unit $unit"; continue; fi
-            if [[ "$scope" == user ]]; then
-                systemctl --user enable "$unit" >/dev/null 2>&1 || warn "could not enable user unit $unit"
-            else
-                as_root systemctl enable "$unit" >/dev/null 2>&1 || warn "could not enable $unit"
-            fi
-        done <"$src/$scope.txt"
-    done
-}
-
-restore_post() {
-    local src="$1"
-    if [[ -f "$src/dconf/user.dconf" && $DRY_RUN -eq 0 ]] && command -v dconf >/dev/null 2>&1; then
-        dconf load / <"$src/dconf/user.dconf" 2>/dev/null || warn "dconf load failed"
-    fi
-    say ""
-    say "Host-specific state was not restored, by design: monitors.conf, colors.conf,"
-    say "the colour scheme and machine-id are regenerated for this machine."
-    if [[ -f "$src/secrets.manifest" ]]; then
-        say ""
-        say "Still needed from your vault — nothing below is in the repo:"
-        say ""
-        sed 's/^/  /' "$src/secrets.manifest"
-    fi
 }
 
 # ── git helpers ──────────────────────────────────────────────────────────
@@ -627,6 +539,7 @@ cmd_status() {
 cmd_restore() {
     local src="" clone
     while [[ $# -gt 0 ]]; do
+        # shellcheck disable=SC2034  # FORCE is read by restore_dotfiles in scripts/lib/
         case "$1" in
             --dry-run) DRY_RUN=1; shift ;;
             --force) FORCE=1; shift ;;
@@ -644,30 +557,39 @@ cmd_restore() {
         git clone --quiet "$src" "$clone" 2>/dev/null ||
         die "cannot clone $src"
     [[ -f "$clone/jarvos-profile.json" ]] || die "$src is not a jarvos-sync profile"
-    rm -rf "${SYNC_DIR:?}"
-    mkdir -p "$(dirname "$SYNC_DIR")"
-    mv "$clone" "$SYNC_DIR"
+    # A preview must not touch the user's working copy. Read it from the temp
+    # clone instead and leave SYNC_DIR exactly as it was.
+    if [[ $DRY_RUN -eq 1 ]]; then
+        PROFILE_SRC="$clone"
+    else
+        rm -rf "${SYNC_DIR:?}"
+        mkdir -p "$(dirname "$SYNC_DIR")"
+        mv "$clone" "$SYNC_DIR"
+        PROFILE_SRC="$SYNC_DIR"
+    fi
 
     say "restoring from $src"
     say ""
     say "[1/4] packages"
-    restore_packages "$SYNC_DIR"
+    restore_packages "$PROFILE_SRC"
+    restore_uv_tools "$PROFILE_SRC"
     phase_begin "dotfiles" 2 "applying the dotfile delta"
     say "[2/4] dotfiles"
-    restore_dotfiles "$SYNC_DIR"
+    restore_dotfiles "$PROFILE_SRC"
     phase_begin "units" 3 "enabling units"
     say "[3/4] units"
-    restore_units "$SYNC_DIR"
+    restore_units "$PROFILE_SRC"
     phase_begin "post" 4 "post-install steps"
     say "[4/4] post"
-    restore_post "$SYNC_DIR"
+    restore_post "$PROFILE_SRC"
 
     say ""
     if [[ $DRY_RUN -eq 1 ]]; then
         say "dry run — nothing was changed. packages: $RESTORE_PKGS would install," \
+            "uv tools: $RESTORE_UV would install," \
             "dotfiles: $RESTORE_DOTS would change, units: $RESTORE_UNITS would enable"
     else
-        say "restore complete — packages: $RESTORE_PKGS new, dotfiles: $RESTORE_DOTS changed, units: $RESTORE_UNITS enabled"
+        say "restore complete — packages: $RESTORE_PKGS new, uv tools: $RESTORE_UV new, dotfiles: $RESTORE_DOTS changed, units: $RESTORE_UNITS enabled"
         [[ -n "$BACKUP_DIR" ]] && say "overwritten files were backed up to $BACKUP_DIR"
     fi
     progress "done" "post" 4 "$STEP" "restore complete" 0

@@ -154,6 +154,66 @@ test_aur_delta() {
     pass_test
 }
 
+test_uv_tools_delta() {
+    start_test "uv tools the modules do not install are captured; the ones they do are not"
+    assert_file_exists "$STAGE/packages/uv-tools.txt" || return
+    assert_contains "$STAGE/packages/uv-tools.txt" 'user-tool' || return
+    assert_contains "$STAGE/packages/uv-tools.txt" 'flaky-tool' || return
+    assert_not_contains "$STAGE/packages/uv-tools.txt" 'demo-tool' || return
+    pass_test
+}
+
+test_uv_tool_from_a_continued_loop_is_baseline() {
+    start_test "a uv tool named on a continued [post] loop line is not captured"
+    assert_not_contains "$STAGE/packages/uv-tools.txt" 'looped-tool' || return
+    pass_test
+}
+
+test_uv_tool_installed_by_path_is_baseline() {
+    start_test "a uv tool a module installs from a local checkout is not captured"
+    assert_not_contains "$STAGE/packages/uv-tools.txt" 'hypr-box' || return
+    pass_test
+}
+
+test_uv_tool_sharing_a_package_name_is_captured() {
+    start_test "a uv tool whose name is only a module *package* still travels"
+    # The catalogue's pacman package is not the uv tool of the same name, so
+    # nothing in any [post] installs it — dropping it would lose it silently.
+    assert_contains "$STAGE/packages/uv-tools.txt" 'sshuttle' || return
+    pass_test
+}
+
+test_uv_tool_only_mentioned_by_a_post_block_is_captured() {
+    start_test "a uv tool a [post] block only mentions, never installs, is captured"
+    # dev.module's [post] says `usermod -aG docker,libvirt` and nothing else
+    # about docker. Reading it as "the catalogue provides the docker uv tool"
+    # loses the user's tool without a word — the failure this feature exists
+    # to prevent — so the baseline is what [post] *installs*, not what it says.
+    assert_contains "$STAGE/packages/uv-tools.txt" 'docker' || return
+    pass_test
+}
+
+test_uv_executables_are_not_tools() {
+    start_test "executables listed under a uv tool are not captured as tools"
+    assert_not_contains "$STAGE/packages/uv-tools.txt" 'phantom-tool' || return
+    pass_test
+}
+
+test_uv_tools_file_written_when_nothing_to_carry() {
+    start_test "uv-tools.txt is written even when there is no uv tool to carry"
+    # status diffs a fresh capture against the profile: a file that exists on
+    # one machine and not on another is drift the user cannot act on.
+    cp "$FAKE_STATE/uv-tools" "$SANDBOX_ROOT/uv-tools.bak"
+    : >"$FAKE_STATE/uv-tools"
+    run_sync capture --into "$SANDBOX_ROOT/stage-nouv"
+    cp "$SANDBOX_ROOT/uv-tools.bak" "$FAKE_STATE/uv-tools"
+    assert_status "$RUN_STATUS" 0 || return
+    assert_file_exists "$SANDBOX_ROOT/stage-nouv/packages/uv-tools.txt" || return
+    [[ -s "$SANDBOX_ROOT/stage-nouv/packages/uv-tools.txt" ]] &&
+        { fail_test "expected an empty list"; return; }
+    pass_test
+}
+
 test_units_delta() {
     start_test "units are enabled-minus-baseline, split system/user"
     assert_contains "$STAGE/units/system.txt" 'docker.service' || return
@@ -267,6 +327,13 @@ main() {
     test_module_packages_are_baseline
     test_legacy_tier_only_package_is_delta
     test_aur_delta
+    test_uv_tools_delta
+    test_uv_tool_from_a_continued_loop_is_baseline
+    test_uv_tool_installed_by_path_is_baseline
+    test_uv_tool_sharing_a_package_name_is_captured
+    test_uv_tool_only_mentioned_by_a_post_block_is_captured
+    test_uv_executables_are_not_tools
+    test_uv_tools_file_written_when_nothing_to_carry
     test_units_delta
     test_dconf_captured
     test_secrets_manifest_names_only

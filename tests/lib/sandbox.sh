@@ -143,6 +143,9 @@ matugen-bin
 legacy-only-pkg
 EOF
     mkdir -p "$FAKE_BASE/system/modules"
+    # Both shapes the real catalogue uses to install a uv tool, because the name
+    # is never the literal argument of `uv tool install` in either of them.
+    # Here: a loop over a continued list, exactly like security.module.
     cat >"$FAKE_BASE/system/modules/apps.module" <<'EOF'
 name: Apps
 description: test module
@@ -150,7 +153,34 @@ description: test module
 brave-bin
 zen-browser-bin
 [post]
-echo hi
+for t in demo-tool \
+    looped-tool; do
+    uv tool install --quiet "$t" || echo "skip uv tool $t"
+done
+EOF
+    # And there: a local checkout installed by path, like ai.module's hypr-box.
+    # Its [packages] block names a tool that is *also* installed with uv here —
+    # a pacman package of the same name is not the uv tool, so it must travel.
+    cat >"$FAKE_BASE/system/modules/ai.module" <<'EOF'
+name: AI layer
+description: test module
+[packages]
+sshuttle
+[post]
+src="${JARVOS_ROOT:-$HOME/JarvOS}/hypr-box"
+uv tool install --force "$src"
+EOF
+    # A [post] that installs no uv tool at all, copied in shape from dev.module.
+    # Every word in it — docker among them — is a word the catalogue merely
+    # mentions, not a tool it installs.
+    cat >"$FAKE_BASE/system/modules/dev.module" <<'EOF'
+name: Dev stack
+description: test module
+[packages]
+docker
+[post]
+sudo -n usermod -aG docker,libvirt "$USER" || true
+echo "Log out and back in for the docker/libvirt groups to take effect."
 EOF
     cat >"$FAKE_BASE/system/services/enable.txt" <<'EOF'
 # scope service tier
@@ -214,6 +244,22 @@ case "${1:-}" in
 esac
 EOF
 
+    cat >"$FAKE_BIN/uv" <<'EOF'
+#!/usr/bin/env bash
+[[ "${1:-}" == "tool" ]] || exit 0
+case "${2:-}" in
+    list) cat "$FAKE_STATE/uv-tools" 2>/dev/null ;;
+    install)
+        name=""
+        for a in "${@:3}"; do [[ "$a" == -* ]] || name="$a"; done
+        printf '%s\n' "$name" >> "$FAKE_STATE/uv-calls"
+        if grep -qxF "$name" "$FAKE_STATE/uv-fail" 2>/dev/null; then
+            echo "error: no solution found for $name" >&2; exit 1
+        fi
+        printf '%s v1.0.0\n- %s\n' "$name" "$name" >> "$FAKE_STATE/uv-tools" ;;
+esac
+EOF
+
     cat >"$FAKE_BIN/sudo" <<'EOF'
 #!/usr/bin/env bash
 # Drop sudo's own leading options, then exec the command with ITS options intact.
@@ -229,6 +275,30 @@ EOF
     printf 'NetworkManager.service\n' >"$FAKE_STATE/units-system"
     printf 'pipewire.socket\n' >"$FAKE_STATE/units-user"
     printf "[org/gnome/desktop/interface]\ncolor-scheme='prefer-dark'\n" >"$FAKE_STATE/dconf-dump"
+    # `uv tool list` shape: a package line per tool, its executables indented
+    # under it. demo-tool and looped-tool come from apps.module's [post] and
+    # hypr-box from ai.module's; sshuttle is a module *package* name, and the
+    # rest are the user's own. phantom-tool is an executable, never a tool.
+    cat >"$FAKE_STATE/uv-tools" <<'EOF'
+demo-tool v1.0.0
+- demo-tool
+looped-tool v1.0.0
+- looped-tool
+hypr-box v0.1.0
+- hypr-box
+sshuttle v1.3.2
+- sshuttle
+docker v7.1.0
+- docker
+user-tool v2.0.0
+- user-tool
+- phantom-tool
+- ut
+flaky-tool v0.1.0
+- flaky-tool
+EOF
+    : >"$FAKE_STATE/uv-fail"
+    : >"$FAKE_STATE/uv-calls"
 }
 
 # Run jarvos-sync inside the sandbox. Captures stdout+stderr, returns its status

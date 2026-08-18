@@ -42,6 +42,11 @@ switch_to_fresh_home() {
     : >"$FAKE_STATE/pacman-installed"
     : >"$FAKE_STATE/yay-installed"
     : >"$FAKE_STATE/units-enabled-calls"
+    : >"$FAKE_STATE/uv-calls"
+    # the new box has only what apps.module's [post] installed
+    printf 'demo-tool v1.0.0\n- demo-tool\n' >"$FAKE_STATE/uv-tools"
+    # and one of the user's tools cannot be resolved here
+    printf 'flaky-tool\n' >"$FAKE_STATE/uv-fail"
     # the distro ships these; restore must lay its delta on top
     mkdir -p "$FAKE_HOME/.config/fish"
     cp "$FAKE_BASE/config/.config/fish/config.fish" "$FAKE_HOME/.config/fish/config.fish"
@@ -103,6 +108,18 @@ test_push_clears_drift() {
     pass_test
 }
 
+test_restore_dry_run_keeps_the_existing_profile() {
+    start_test "restore --dry-run leaves an existing profile working copy alone"
+    export JARVOS_SYNC_DIR="$SANDBOX_ROOT/profile-restored"
+    mkdir -p "$JARVOS_SYNC_DIR"
+    printf 'my working copy\n' >"$JARVOS_SYNC_DIR/sentinel.txt"
+    run_sync restore "$BARE" --dry-run
+    assert_status "$RUN_STATUS" 0 || { printf '%s\n' "$RUN_OUT"; return; }
+    assert_file_exists "$JARVOS_SYNC_DIR/sentinel.txt" || return
+    assert_contains "$JARVOS_SYNC_DIR/sentinel.txt" 'my working copy' || return
+    pass_test
+}
+
 test_restore_dry_run_writes_nothing() {
     start_test "restore --dry-run writes nothing and installs nothing"
     export JARVOS_SYNC_DIR="$SANDBOX_ROOT/profile-restored"
@@ -110,7 +127,11 @@ test_restore_dry_run_writes_nothing() {
     assert_status "$RUN_STATUS" 0 || { printf '%s\n' "$RUN_OUT"; return; }
     assert_no_file "$FAKE_HOME/.config/fish/functions/gs.fish" || return
     [[ ! -s "$FAKE_STATE/pacman-installed" ]] || { fail_test "dry-run installed packages"; return; }
+    [[ ! -s "$FAKE_STATE/uv-calls" ]] || { fail_test "dry-run installed uv tools"; return; }
     assert_stdout_contains "$RUN_OUT" "would" || return
+    # sshuttle, docker, user-tool and flaky-tool: everything the source box had
+    # that no module [post] installs.
+    assert_stdout_contains "$RUN_OUT" "uv tools: 4 would install" || return
     pass_test
 }
 
@@ -128,6 +149,27 @@ test_restore_installs_packages() {
     start_test "restore installs the package delta (repo via pacman, AUR via yay)"
     assert_contains "$FAKE_STATE/pacman-installed" 'neovim' || return
     assert_contains "$FAKE_STATE/yay-installed" 'feroxbuster' || return
+    pass_test
+}
+
+test_restore_installs_uv_tools() {
+    start_test "restore installs the uv-tool delta and leaves module tools alone"
+    assert_contains "$FAKE_STATE/uv-calls" 'user-tool' || return
+    assert_not_contains "$FAKE_STATE/uv-calls" 'demo-tool' || return
+    pass_test
+}
+
+test_restore_survives_a_failing_uv_tool() {
+    start_test "a uv tool that will not install warns and does not abort the phase"
+    # flaky-tool is set to fail; the run must still reach the end and succeed
+    assert_status "$RUN_STATUS" 0 || return
+    assert_contains "$FAKE_STATE/uv-calls" 'flaky-tool' || return
+    assert_stdout_contains "$RUN_OUT" "flaky-tool" || return
+    assert_stdout_contains "$RUN_OUT" "restore complete" || return
+    # and the tool that *can* install still did, whatever the order
+    grep -q '^user-tool' "$FAKE_STATE/uv-tools" || { fail_test "user-tool was not installed"; return; }
+    # the count is what installed, not what was attempted: 4 asked for, 1 failed
+    assert_stdout_contains "$RUN_OUT" "uv tools: 3 new" || return
     pass_test
 }
 
@@ -155,6 +197,7 @@ test_second_restore_is_noop() {
     : >"$FAKE_STATE/pacman-installed"
     : >"$FAKE_STATE/yay-installed"
     : >"$FAKE_STATE/units-enabled-calls"
+    : >"$FAKE_STATE/uv-calls"
     local before after
     before="$(ls "$FAKE_HOME/.jarvos-sync-backup" 2>/dev/null | wc -l)"
     run_sync restore "$BARE"
@@ -166,6 +209,21 @@ test_second_restore_is_noop() {
     [[ ! -s "$FAKE_STATE/units-enabled-calls" ]] || { fail_test "re-enabled units"; return; }
     after="$(ls "$FAKE_HOME/.jarvos-sync-backup" 2>/dev/null | wc -l)"
     [[ "$before" == "$after" ]] || { fail_test "a no-op restore still took a backup"; return; }
+    pass_test
+}
+
+test_second_restore_reinstalls_no_uv_tool() {
+    start_test "a second restore does not reinstall a uv tool the box already has"
+    assert_not_contains "$FAKE_STATE/uv-calls" 'user-tool' || return
+    assert_stdout_contains "$RUN_OUT" "uv tools: 0 new" || return
+    pass_test
+}
+
+test_second_restore_retries_a_failed_uv_tool() {
+    start_test "a second restore retries the uv tool that failed the first time"
+    # It never installed, so it is still missing — and a rebuild the user runs
+    # again is exactly when a transient resolution failure should get a retry.
+    assert_contains "$FAKE_STATE/uv-calls" 'flaky-tool' || return
     pass_test
 }
 
@@ -212,13 +270,18 @@ main() {
     test_push_clears_drift
 
     switch_to_fresh_home
+    test_restore_dry_run_keeps_the_existing_profile
     test_restore_dry_run_writes_nothing
     test_restore_applies_dotfiles
     test_restore_installs_packages
+    test_restore_installs_uv_tools
+    test_restore_survives_a_failing_uv_tool
     test_restore_enables_units
     test_restore_reports_secrets
     test_restore_skips_host_specific
     test_second_restore_is_noop
+    test_second_restore_reinstalls_no_uv_tool
+    test_second_restore_retries_a_failed_uv_tool
     test_restore_backs_up_conflicts
     test_restore_progress_json
     test_restore_failure_marks_progress_failed
