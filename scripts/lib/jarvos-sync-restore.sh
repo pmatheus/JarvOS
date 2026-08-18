@@ -45,7 +45,7 @@ restore_packages() {
             # shellcheck disable=SC2046
             yay -S --needed --noconfirm $(tr '\n' ' ' <"$aur") || warn "some AUR packages failed"
         else
-            warn "yay is missing; skipping $(wc -l <"$aur") AUR package(s)"
+            warn "yay is missing; skipping $(wc -l <"$aur") AUR package(s) — tick the Dev module in JarvOS Setup, then re-run restore"
         fi
     fi
 }
