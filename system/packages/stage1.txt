@@ -113,6 +113,8 @@ upower
 bluez
 bluez-utils
 libnotify
+# The shell's network panel launches this directly (Nmcli service).
+nm-connection-editor
 
 # === SCREENSHOT / CLIPBOARD / INPUT ===
 grim
@@ -131,6 +133,10 @@ gpu-screen-recorder
 libqalculate
 libxml2
 pacman-contrib
+# Super+V (clipboard history) and Super+. (emoji) are fuzzel menus, not shell
+# panels; Super+B opens the calculator into its own special workspace.
+fuzzel
+qalculate-gtk
 
 # === TERMINAL & FIRST-LIGHT CLI ===
 kitty
