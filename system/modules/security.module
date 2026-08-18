@@ -1,0 +1,124 @@
+# JarvOS module — security / RE / pentest toolkit.
+#
+# Grounded in `pacman -Qqe` and `uv tool list` on the JarvOS reference box, not
+# only in system/packages/aur-security.txt: most of the working toolkit ships in
+# the official repos (nmap, metasploit, ghidra, radare2, hashcat …) or as uv
+# tools, and an AUR-only list silently dropped all of it.
+#
+# powershell-bin and forticlient are proprietary (free download).
+
+name: Security & CTF
+description: Recon, AD, exploitation, reversing and forensics, plus ezpz and ctf.fish.
+icon: security
+size_estimate: ~10 GiB
+default: false
+
+[packages]
+# Recon and web
+nmap
+rustscan
+masscan
+gobuster
+feroxbuster
+ffuf
+wpscan
+whatweb
+sqlmap
+hydra
+onesixtyone-git
+wscat
+fping
+
+# Network and AD
+bettercap
+tcpdump
+wireshark-qt
+bind
+proxychains-ng
+sshuttle
+sshpass
+expect
+openvpn
+samba
+openldap
+python-krb5
+impacket
+netexec
+responder
+kerbrute-bin
+pre2k-git
+targetedkerberoast-git
+python-bloodhound-ce-git
+ligolo
+gnu-netcat
+
+# Exploitation
+metasploit
+python-pwntools
+z3
+mingw-w64-gcc
+
+# Reversing
+gdb
+gef
+radare2
+rizin
+rz-cutter
+rz-ghidra
+ghidra
+binaryninja-free
+retdec-bin
+jadx
+android-apktool-bin
+android-tools
+dex2jar
+binwalk
+upx
+patchelf
+tlsh
+
+# Forensics and stego
+testdisk
+chntpw
+perl-image-exiftool
+libpff-git
+libvshadow-git
+steghide
+stegseek
+scalpel-git
+rifiuti2
+pngcheck
+
+# Cracking and wordlists
+hashcat
+john
+fcrackzip
+seclists
+rockyou
+cupp-git
+
+# Runtime for the uv tools in the post-install step
+uv
+
+# Proprietary runtimes used by the above
+powershell-bin
+forticlient
+vagrant
+
+[post]
+# The Python side of the toolkit lives in uv tools on the reference box.
+for t in ad-miner analyzemft arjun bloodyad certipy-ad coercer dissect-target \
+    donpapi enum4linux-ng flare-floss frida-tools hashid ldapdomaindump lsassy \
+    mitm6 name-that-hash objection plaso pypykatz ropper sigma-cli volatility3 yarp; do
+    uv tool install --quiet "$t" || echo "skip uv tool $t"
+done
+
+# chsoares' CTF helpers, cloned next to the user's home.
+for repo in chsoares/ezpz chsoares/ctf.fish; do
+    dest="${JARVOS_HOME:-$HOME}/${repo#*/}"
+    if [ -d "$dest/.git" ]; then
+        git -C "$dest" pull --ff-only || true
+    else
+        git clone --depth 1 "https://github.com/$repo.git" "$dest"
+    fi
+done

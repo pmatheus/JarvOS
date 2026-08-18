@@ -1,0 +1,510 @@
+#!/usr/bin/env bash
+# jarvos-module-install — install JarvOS setup modules in the background.
+#
+#   jarvos-module-install --list            emit the module catalogue as JSON
+#   jarvos-module-install --list --with-packages   … including every package name
+#   jarvos-module-install apps ai           install those modules
+#   jarvos-module-install --dry-run apps    resolve everything, install nothing
+#
+# Progress is written to a flat key=value state file that the shell's
+# JarvosSetup service watches; nothing is ever printed to a terminal the user
+# does not have. Full package manager output goes to a per-module log.
+
+set -uo pipefail
+
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/jarvos"
+STATE="${JARVOS_SETUP_STATE:-$STATE_DIR/setup-state}"
+LOG_DIR="$STATE_DIR/logs"
+RUN_DIR="${XDG_RUNTIME_DIR:-/tmp}/jarvos-setup"
+
+DRY_RUN=false
+WITH_PACKAGES=false
+KEEPALIVE_PID=""
+ASKPASS_FIFO=""
+
+# ---------------------------------------------------------------- discovery --
+
+self=$(readlink -f "${BASH_SOURCE[0]}")
+JARVOS_ROOT=${JARVOS_ROOT:-$(cd "$(dirname "$self")/.." && pwd)}
+export JARVOS_ROOT
+
+find_module_dir() {
+    local d
+    for d in "${JARVOS_MODULE_DIR:-}" /usr/share/jarvos/modules \
+        /usr/local/share/jarvos/modules "$JARVOS_ROOT/system/modules"; do
+        [ -n "$d" ] && [ -d "$d" ] && { printf '%s\n' "$d"; return 0; }
+    done
+    return 1
+}
+
+MODULE_DIR=$(find_module_dir) || {
+    echo "jarvos-module-install: no module directory found" >&2
+    exit 2
+}
+
+# ------------------------------------------------------------ .module parser --
+#
+# Header lines are `key: value` until the first [section]. [packages] holds one
+# package name per line. [post] is verbatim bash. Comments (#) and blank lines
+# are ignored outside [post].
+
+declare -A M_NAME M_DESC M_ICON M_SIZE M_DEFAULT
+declare -A M_PACKAGES M_POST
+
+parse_module() {
+    local file=$1 id=$2 section="" line key value packages="" post=""
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$section" in
+        post)
+            post+="$line"$'\n'
+            continue
+            ;;
+        esac
+        case "$line" in
+        \[*\])
+            section=${line#[}
+            section=${section%]}
+            continue
+            ;;
+        '' | \#*) continue ;;
+        esac
+        if [ "$section" = packages ]; then
+            packages+="${line%%#*}"$'\n'
+            continue
+        fi
+        key=${line%%:*}
+        value=${line#*:}
+        [ "$key" = "$line" ] && continue
+        # shellcheck disable=SC2295
+        value=${value#"${value%%[![:space:]]*}"}
+        case "$key" in
+        name) M_NAME[$id]=$value ;;
+        description) M_DESC[$id]=$value ;;
+        icon) M_ICON[$id]=$value ;;
+        size_estimate) M_SIZE[$id]=$value ;;
+        default) M_DEFAULT[$id]=$value ;;
+        esac
+    done <"$file"
+
+    M_PACKAGES[$id]=$(printf '%s' "$packages" | tr -d ' \t' | grep -v '^$' || true)
+    M_POST[$id]=$post
+    M_NAME[$id]=${M_NAME[$id]:-$id}
+    M_ICON[$id]=${M_ICON[$id]:-widgets}
+    M_DEFAULT[$id]=${M_DEFAULT[$id]:-false}
+}
+
+module_ids() {
+    local f id
+    for f in "$MODULE_DIR"/*.module; do
+        [ -e "$f" ] || continue
+        id=$(basename "$f" .module)
+        printf '%s\n' "$id"
+    done
+}
+
+load_all() {
+    local id
+    while read -r id; do
+        parse_module "$MODULE_DIR/$id.module" "$id"
+    done < <(module_ids)
+}
+
+# --------------------------------------------------------------- state file --
+
+sanitize() { printf '%s' "$1" | tr -d '\r\n' | cut -c1-200; }
+
+set_kv() {
+    local -A upd=()
+    local k v line tmp
+    while [ $# -ge 2 ]; do
+        upd[$1]=$(sanitize "$2")
+        shift 2
+    done
+    mkdir -p "$(dirname "$STATE")"
+    tmp="$STATE.$$.tmp"
+    : >"$tmp"
+    if [ -f "$STATE" ]; then
+        while IFS= read -r line; do
+            k=${line%%=*}
+            if [ -n "${upd[$k]+x}" ]; then
+                printf '%s=%s\n' "$k" "${upd[$k]}" >>"$tmp"
+                unset "upd[$k]"
+            else
+                printf '%s\n' "$line" >>"$tmp"
+            fi
+        done <"$STATE"
+    fi
+    for k in "${!upd[@]}"; do
+        printf '%s=%s\n' "$k" "${upd[$k]}" >>"$tmp"
+    done
+    mv -f "$tmp" "$STATE"
+}
+
+# ------------------------------------------------------------------- privesc --
+#
+# pacman needs root; yay refuses to run as root. So the script stays the user
+# and keeps a warm sudo timestamp. If sudo needs a password, the panel is asked
+# for it over a private FIFO — the password never reaches argv, the log or disk.
+
+sudo_keepalive() {
+    while true; do
+        sudo -n -v 2>/dev/null || return
+        sleep 45
+    done
+}
+
+ensure_sudo() {
+    if sudo -n true 2>/dev/null; then
+        sudo_keepalive &
+        KEEPALIVE_PID=$!
+        return 0
+    fi
+
+    mkdir -p -m 700 "$RUN_DIR"
+    ASKPASS_FIFO="$RUN_DIR/askpass.$$"
+    rm -f "$ASKPASS_FIFO"
+    mkfifo -m 600 "$ASKPASS_FIFO" || return 1
+    set_kv overall needs-password askpass "$ASKPASS_FIFO" \
+        message "Administrator password required"
+
+    local pw ok=1
+    if pw=$(timeout 180 cat "$ASKPASS_FIFO"); then
+        printf '%s\n' "$pw" | sudo -S -v 2>/dev/null && ok=0
+    fi
+    pw=""
+    rm -f "$ASKPASS_FIFO"
+    set_kv askpass ""
+
+    if [ "$ok" -ne 0 ]; then
+        set_kv overall failed message "Administrator authentication failed"
+        return 1
+    fi
+    set_kv overall running message ""
+    sudo_keepalive &
+    KEEPALIVE_PID=$!
+}
+
+cleanup() {
+    [ -n "$KEEPALIVE_PID" ] && kill "$KEEPALIVE_PID" 2>/dev/null
+    [ -n "$ASKPASS_FIFO" ] && rm -f "$ASKPASS_FIFO"
+}
+trap cleanup EXIT
+
+# ------------------------------------------------------------------ install --
+
+installed_set=""
+repo_set=""
+refresh_installed() {
+    installed_set=$'\n'$(pacman -Qq 2>/dev/null)$'\n'
+    [ -z "$repo_set" ] && repo_set=$'\n'$(pacman -Slq 2>/dev/null)$'\n'
+}
+
+# A user-started `pacman -Syu`, or the ISO's own repo build, holds the database
+# lock. Wait it out with a visible message instead of failing on the spot.
+wait_for_db_lock() {
+    local id=$1 waited=0
+    while [ -e /var/lib/pacman/db.lck ] && [ "$waited" -lt "${JARVOS_LOCK_TIMEOUT:-1800}" ]; do
+        set_kv "module.$id.message" "Waiting for another package operation to finish"
+        sleep 5
+        waited=$((waited + 5))
+    done
+    [ ! -e /var/lib/pacman/db.lck ]
+}
+is_installed() { [[ $installed_set == *$'\n'$1$'\n'* ]]; }
+
+have_yay() {
+    hash -r 2>/dev/null || true
+    command -v yay >/dev/null 2>&1
+}
+
+# Stage 1 ships neither yay nor base-devel — a fresh JarvOS is never meant to
+# compile. Repo packages therefore install instantly; only a module with AUR
+# packages the binary repo does not serve needs a toolchain, and when that
+# happens the panel says so before starting and the step is named while it runs.
+ensure_toolchain() {
+    local id=$1 log=$2 p tmp
+    have_yay && return 0
+
+    # A configured binary repo — [jarvos] above all — may already serve a
+    # helper, in which case this costs one pacman transaction and no compile.
+    for p in yay-bin yay; do
+        in_repos "$p" || continue
+        set_kv "module.$id.message" "Installing the AUR helper ($p)"
+        run_tracked "$id" "$log" 0 sudo -n pacman -S --needed --noconfirm --noprogressbar "$p"
+        have_yay && return 0
+    done
+
+    # Otherwise bootstrap by hand. yay-bin ships a prebuilt binary, so this
+    # packages rather than compiles Go; base-devel is what makepkg needs.
+    set_kv "module.$id.message" "Installing base-devel and building yay — one time only"
+    run_tracked "$id" "$log" 0 sudo -n pacman -S --needed --noconfirm --noprogressbar base-devel git || return 1
+    tmp=$(mktemp -d)
+    if git clone --depth 1 https://aur.archlinux.org/yay-bin.git "$tmp/yay-bin" >>"$log" 2>&1 &&
+        (cd "$tmp/yay-bin" && makepkg -si --noconfirm >>"$log" 2>&1); then
+        rm -rf "$tmp"
+        have_yay && return 0
+    fi
+    rm -rf "$tmp"
+    return 1
+}
+
+# Membership against one cached `pacman -Slq` rather than a `pacman -Si` per
+# package: the catalogue is ~130 names and the panel calls --list on every open.
+# `base-devel` and friends are groups, so fall back to a group lookup.
+in_repos() {
+    [[ $repo_set == *$'\n'$1$'\n'* ]] && return 0
+    [ -n "$(pacman -Sqg "$1" 2>/dev/null)" ]
+}
+
+# Run a package manager, mirror everything into the log, and lift its progress
+# into the state file: `(n/m)` and `::` lines become the live message, and each
+# `installing <pkg>...` line advances the package counter from `base`.
+run_tracked() {
+    local id=$1 log=$2 base=$3
+    shift 3
+    "$@" </dev/null 2>&1 | {
+        local done=$base
+        while IFS= read -r line; do
+            printf '%s\n' "$line" >>"$log"
+            case "$line" in
+            installing\ *...)
+                done=$((done + 1))
+                set_kv "module.$id.done" "$done" "module.$id.message" "$line"
+                ;;
+            \(*/*\)*) set_kv "module.$id.message" "$line" ;;
+            ::*) set_kv "module.$id.message" "${line#:: }" ;;
+            esac
+        done
+    }
+    return "${PIPESTATUS[0]}"
+}
+
+install_module() {
+    local id=$1
+    local log="$LOG_DIR/$id-$RUN.log"
+    local pkgs=() repo_pkgs=() aur_pkgs=() failed=() p
+    local total done=0
+
+    mkdir -p "$LOG_DIR"
+    : >"$log"
+    mapfile -t pkgs < <(printf '%s\n' "${M_PACKAGES[$id]}" | grep -v '^$' || true)
+    total=${#pkgs[@]}
+
+    set_kv "module.$id.status" running "module.$id.total" "$total" \
+        "module.$id.done" 0 "module.$id.log" "$log" \
+        "module.$id.message" "Resolving packages" current "$id"
+
+    refresh_installed
+    for p in "${pkgs[@]}"; do
+        if is_installed "$p"; then
+            done=$((done + 1))
+        elif in_repos "$p"; then
+            repo_pkgs+=("$p")
+        else
+            aur_pkgs+=("$p")
+        fi
+    done
+    set_kv "module.$id.done" "$done"
+
+    if $DRY_RUN; then
+        {
+            echo "[dry-run] already installed: $((done))/$total"
+            echo "[dry-run] repo: ${repo_pkgs[*]:-none}"
+            echo "[dry-run] aur:  ${aur_pkgs[*]:-none}"
+        } >>"$log"
+        set_kv "module.$id.status" done "module.$id.done" "$total" \
+            "module.$id.message" "Dry run complete"
+        return 0
+    fi
+
+    # Repo packages go in one transaction — fast, and pacman's own (n/m) lines
+    # drive the message.
+    if [ ${#repo_pkgs[@]} -gt 0 ] || [ ${#aur_pkgs[@]} -gt 0 ]; then
+        wait_for_db_lock "$id" || {
+            set_kv "module.$id.status" failed \
+                "module.$id.message" "Another package manager is still holding the pacman database"
+            return 1
+        }
+    fi
+
+    if [ ${#repo_pkgs[@]} -gt 0 ]; then
+        set_kv "module.$id.message" "Installing ${#repo_pkgs[@]} package(s) from the repositories"
+        if run_tracked "$id" "$log" "$done" sudo -n pacman -S --needed --noconfirm --noprogressbar "${repo_pkgs[@]}"; then
+            done=$((done + ${#repo_pkgs[@]}))
+        else
+            failed+=("${repo_pkgs[@]}")
+        fi
+        set_kv "module.$id.done" "$done"
+    fi
+
+    if [ ${#aur_pkgs[@]} -gt 0 ] && ! ensure_toolchain "$id" "$log"; then
+        failed+=("${aur_pkgs[@]}")
+        echo "!! no AUR helper available; skipped ${#aur_pkgs[@]} package(s)" >>"$log"
+        aur_pkgs=()
+    fi
+
+    # AUR packages one at a time: a single broken PKGBUILD must not take the
+    # rest of the module down with it.
+    for p in "${aur_pkgs[@]}"; do
+        set_kv "module.$id.message" "Building $p"
+        if run_tracked "$id" "$log" "$done" yay -S --needed --noconfirm --sudoloop --answerdiff None \
+            --answerclean None --removemake "$p"; then
+            done=$((done + 1))
+        else
+            failed+=("$p")
+            echo "!! failed: $p" >>"$log"
+        fi
+        set_kv "module.$id.done" "$done"
+    done
+
+    if [ -n "${M_POST[$id]}" ]; then
+        set_kv "module.$id.message" "Running post-install steps"
+        if ! JARVOS_MODULE_ID="$id" bash -c "${M_POST[$id]}" >>"$log" 2>&1; then
+            failed+=("post-install")
+            echo "!! post-install script failed" >>"$log"
+        fi
+    fi
+
+    if [ ${#failed[@]} -eq 0 ]; then
+        set_kv "module.$id.status" done "module.$id.done" "$total" \
+            "module.$id.message" "Installed" "module.$id.failed" ""
+        return 0
+    fi
+    set_kv "module.$id.status" failed "module.$id.failed" "${failed[*]}" \
+        "module.$id.message" "${#failed[@]} item(s) failed — see the log"
+    return 1
+}
+
+# ---------------------------------------------------------------- --list ---
+
+json_escape() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+
+# What this module would actually pull, right now, on this machine: pacman
+# resolves the dependency closure of everything still missing and reports the
+# real download size. A card that promises 200 MB and pulls 4 GB is how trust
+# dies, so the panel prefers this over the hand-written size_estimate.
+pending_download() {
+    local id=$1 p repo=()
+    while read -r p; do
+        [ -z "$p" ] && continue
+        is_installed "$p" && continue
+        in_repos "$p" && repo+=("$p")
+    done <<<"${M_PACKAGES[$id]}"
+    [ ${#repo[@]} -eq 0 ] && {
+        echo 0
+        return
+    }
+    pacman -Sp --needed --print-format '%s' "${repo[@]}" 2>/dev/null |
+        awk '{s+=$1} END {printf "%d\n", s+0}'
+}
+
+# AUR packages cannot be sized without building them; the panel says so rather
+# than guessing.
+pending_aur_count() {
+    local id=$1 p n=0
+    while read -r p; do
+        [ -z "$p" ] && continue
+        is_installed "$p" && continue
+        in_repos "$p" || n=$((n + 1))
+    done <<<"${M_PACKAGES[$id]}"
+    echo "$n"
+}
+
+emit_list() {
+    local id first=true p n inst pfirst aurn
+    refresh_installed
+    printf '{"module_dir":"%s","toolchain_ready":%s,"modules":[' \
+        "$(json_escape "$MODULE_DIR")" "$(have_yay && echo true || echo false)"
+    while read -r id; do
+        $first || printf ','
+        first=false
+        n=0
+        inst=0
+        while read -r p; do
+            [ -z "$p" ] && continue
+            n=$((n + 1))
+            is_installed "$p" && inst=$((inst + 1))
+        done <<<"${M_PACKAGES[$id]}"
+        local aurn
+        aurn=$(pending_aur_count "$id")
+        printf '{"id":"%s","name":"%s","description":"%s","icon":"%s","size_estimate":"%s","default":%s,"packages":%d,"installed":%d,"download_bytes":%s,"aur_pending":%d,"needs_toolchain":%s' \
+            "$(json_escape "$id")" "$(json_escape "${M_NAME[$id]}")" \
+            "$(json_escape "${M_DESC[$id]:-}")" "$(json_escape "${M_ICON[$id]}")" \
+            "$(json_escape "${M_SIZE[$id]:-}")" \
+            "$([ "${M_DEFAULT[$id]}" = true ] && echo true || echo false)" \
+            "$n" "$inst" "$(pending_download "$id")" "$aurn" \
+            "$([ "$aurn" -gt 0 ] && ! have_yay && echo true || echo false)"
+        if $WITH_PACKAGES; then
+            printf ',"packages_list":['
+            local pfirst=true
+            while read -r p; do
+                [ -z "$p" ] && continue
+                $pfirst || printf ','
+                pfirst=false
+                printf '"%s"' "$(json_escape "$p")"
+            done <<<"${M_PACKAGES[$id]}"
+            printf ']'
+        fi
+        printf '}'
+    done < <(module_ids)
+    printf ']}\n'
+}
+
+# -------------------------------------------------------------------- main --
+
+args=()
+for a in "$@"; do
+    case "$a" in
+    --dry-run) DRY_RUN=true ;;
+    --list) LIST=true ;;
+    --with-packages) WITH_PACKAGES=true ;;
+    -h | --help)
+        sed -n '2,12p' "$self"
+        exit 0
+        ;;
+    *) args+=("$a") ;;
+    esac
+done
+
+load_all
+
+if [ "${LIST:-false}" = true ]; then
+    emit_list
+    exit 0
+fi
+
+if [ ${#args[@]} -eq 0 ]; then
+    echo "jarvos-module-install: no modules given (try --list)" >&2
+    exit 2
+fi
+
+for id in "${args[@]}"; do
+    if [ -z "${M_NAME[$id]+x}" ]; then
+        echo "jarvos-module-install: unknown module '$id'" >&2
+        exit 2
+    fi
+done
+
+RUN=$(date +%s)
+mkdir -p "$LOG_DIR"
+set_kv run "$RUN" overall running current "" message "Starting" queue "${args[*]}"
+for id in "${args[@]}"; do
+    set_kv "module.$id.status" pending "module.$id.done" 0 \
+        "module.$id.total" "$(printf '%s\n' "${M_PACKAGES[$id]}" | grep -c . || true)" \
+        "module.$id.message" "Queued" "module.$id.failed" ""
+done
+
+if ! $DRY_RUN && ! ensure_sudo; then
+    for id in "${args[@]}"; do
+        set_kv "module.$id.status" failed "module.$id.message" "Administrator rights required"
+    done
+    exit 1
+fi
+
+rc=0
+for id in "${args[@]}"; do
+    install_module "$id" || rc=1
+done
+
+set_kv current "" message "" overall "$([ "$rc" -eq 0 ] && echo done || echo failed)"
+exit "$rc"

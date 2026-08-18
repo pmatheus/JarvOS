@@ -1,0 +1,31 @@
+# JarvOS module — everyday desktop applications.
+# Format: `key: value` header, then [packages] (one name per line) and an
+# optional [post] block of bash. Comments and blank lines are ignored outside
+# [post]. Parsed by scripts/jarvos-module-install and, through its --list JSON,
+# by the JarvOS Setup panel.
+
+name: Applications
+description: Browsers, messaging, editors and the everyday desktop apps.
+icon: apps
+size_estimate: ~3 GiB
+default: true
+
+[packages]
+brave-bin
+google-chrome
+zen-browser-bin
+spotify
+ferdium-bin
+visual-studio-code-bin
+obsidian
+loupe
+gnome-text-editor
+easyeffects
+translate-shell
+nautilus-open-any-terminal
+xorg-xhost
+
+# Legacy GTK2 tray glue — older tray applications still need it.
+gtk-sharp-2
+libappindicator-gtk2
+libdbusmenu-gtk2

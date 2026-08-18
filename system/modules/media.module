@@ -1,0 +1,19 @@
+# JarvOS module — capture and image work.
+#
+# python-opencv is here rather than in a module of its own: it is what
+# scheme_for_image.py imports to auto-detect a wallpaper's scheme type. Without
+# it the call site (switchwall.sh) silently falls back, so the desktop still
+# works — it just stops guessing well.
+
+name: Capture & imaging
+description: Screen recording, screenshots, OCR and the image analysis the theming uses.
+icon: photo_camera
+size_estimate: ~500 MiB
+default: false
+
+[packages]
+wf-recorder
+hyprshot
+tesseract
+tesseract-data-eng
+python-opencv

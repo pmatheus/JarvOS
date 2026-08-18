@@ -1,0 +1,30 @@
+# JarvOS module — the command line you actually live in.
+#
+# Stage 1 dropped these from the core (v2-stage1, 2026-08-18) and they need a
+# home or the distro loses them. They are their own story — "I live in the
+# terminal" — rather than padding for apps or dev.
+
+name: Terminal comforts
+description: File manager, monitors, search, transfer and archive tools for the shell.
+icon: terminal
+size_estimate: ~200 MiB
+default: true
+
+[packages]
+yazi
+gum
+htop
+tree
+less
+vim
+tmux
+plocate
+stow
+wget
+rsync
+axel
+aria2
+rclone
+chafa
+inotify-tools
+7zip

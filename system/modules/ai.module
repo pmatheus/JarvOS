@@ -1,0 +1,32 @@
+# JarvOS module — the AI layer. hypr-box is installed from the JarvOS
+# checkout (it is a git submodule), not from a package repository.
+
+name: AI layer
+description: hypr-box plus the coding agents and a local model runtime.
+icon: neurology
+size_estimate: ~2 GiB
+default: true
+
+[packages]
+claude-code
+opencode
+openai-codex
+antigravity
+ollama
+claude-desktop
+
+[post]
+# hypr-box — JarvOS' own AI control layer, installed as a uv tool.
+src="${JARVOS_ROOT:-$HOME/JarvOS}/hypr-box"
+if [ -d "${JARVOS_ROOT:-}/.git" ]; then
+    git -C "$JARVOS_ROOT" submodule update --init --recursive hypr-box || true
+fi
+if [ ! -f "$src/pyproject.toml" ]; then
+    src="${XDG_DATA_HOME:-$HOME/.local/share}/jarvos/hypr-box"
+    if [ -d "$src/.git" ]; then
+        git -C "$src" pull --ff-only
+    else
+        git clone --recurse-submodules https://github.com/pmatheus/hypr-box.git "$src"
+    fi
+fi
+uv tool install --force "$src"

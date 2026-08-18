@@ -1,0 +1,45 @@
+# JarvOS module — snapshots, filesystems and hardware control.
+#
+# SNAPSHOT TOOL: snapper, deliberately, and timeshift is NOT offered.
+# The repo's wiring contradicted itself (v2-stage1, 2026-08-18): install.sh
+# pointed grub-btrfsd at timeshift (`--timeshift-auto`) while
+# system/services/enable.txt enabled snapper's timers, so snapper took the
+# snapshots and the boot menu listed timeshift's — i.e. an empty submenu.
+# Offering both as separate cards would reproduce that on purpose. snapper wins
+# because snap-pac gives pre/post snapshots around every pacman transaction,
+# which is the feature that matters on a rolling release, because
+# btrfs-assistant is its GUI, and because grub-btrfs already watches snapper's
+# /.snapshots by default — so choosing snapper means REMOVING an override
+# rather than adding one. The [post] below does exactly that.
+
+name: System & snapshots
+description: Btrfs snapshots on every upgrade, plus filesystem and hardware tools.
+icon: settings_backup_restore
+size_estimate: ~400 MiB
+default: false
+
+[packages]
+snapper
+snap-pac
+grub-btrfs
+btrfs-assistant
+zram-generator
+ntfs-3g
+smartmontools
+openrgb
+
+[post]
+if [ "$(findmnt -no FSTYPE /)" != "btrfs" ]; then
+    echo "root is not btrfs — installing the tools but not wiring snapshots"
+else
+    # Drop install.sh's timeshift-flavoured override so grub-btrfsd watches
+    # snapper's /.snapshots, which is its default.
+    sudo -n rm -f /etc/systemd/system/grub-btrfsd.service.d/override.conf
+    sudo -n rmdir --ignore-fail-on-non-empty /etc/systemd/system/grub-btrfsd.service.d 2>/dev/null || true
+    sudo -n systemctl daemon-reload
+    sudo -n snapper -c root list >/dev/null 2>&1 || sudo -n snapper -c root create-config / || true
+    sudo -n systemctl enable --now snapper-timeline.timer snapper-cleanup.timer || true
+    sudo -n systemctl enable --now grub-btrfsd.service || true
+    echo "snapper is the snapshot tool; grub-btrfsd now lists /.snapshots"
+fi
+sudo -n systemctl enable --now smartd.service || true
