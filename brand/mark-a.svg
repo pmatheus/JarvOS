@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- A. Hook — the J reduced to its hook. One stroke, nothing else. -->
+  <path d="M336 104 V296 a112 112 0 0 1 -224 0"
+        fill="none" stroke="currentColor" stroke-width="56" stroke-linecap="round"/>
+</svg>

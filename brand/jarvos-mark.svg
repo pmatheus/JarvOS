@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="JarvOS">
+  <!-- JarvOS mark — the J cut out of the tile, optically centred on 256,256 -->
+  <defs>
+    <mask id="jarvos-j">
+      <rect width="512" height="512" fill="#fff"/>
+      <path d="M332 139 V290 a76 76 0 0 1 -152 0" fill="none" stroke="#000"
+            stroke-width="58" stroke-linecap="round"/>
+    </mask>
+  </defs>
+  <rect width="512" height="512" rx="120" fill="currentColor" mask="url(#jarvos-j)"/>
+</svg>
