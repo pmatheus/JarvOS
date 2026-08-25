@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# jarvos-state — runtime markers under $XDG_STATE_HOME/jarvos.
+#
+#   jarvos-state set <name>     create the marker
+#   jarvos-state clear <name>   remove it (missing is not an error)
+#   jarvos-state check <name>   exit 0 if it exists, 1 if it does not
+#   jarvos-state list           print every marker name, one per line
+#
+# The filename is the dispatch. A migration asks for a service restart by
+# touching restart-<service>-required; nothing in the update pipeline has to
+# learn about it.
+
+set -euo pipefail
+
+# shellcheck source=lib/jarvos-common.sh
+_lib="$(dirname "$(realpath "$0")")/../lib/jarvos-common.sh"
+if [[ -r "$_lib" ]]; then source "$_lib"; else source /usr/share/jarvos/lib/jarvos-common.sh; fi
+unset _lib
+
+# A marker name is a single path component. Anything else is a caller bug
+# that would write outside the state directory.
+require_name() {
+    case "${1-}" in
+        "" | */* | .*) die "not a valid marker name: '${1-}'" ;;
+    esac
+}
+
+case "${1-}" in
+set)
+    require_name "${2-}"
+    mkdir -p "$JARVOS_STATE"
+    : >"$JARVOS_STATE/$2"
+    ;;
+clear)
+    require_name "${2-}"
+    rm -f "$JARVOS_STATE/$2"
+    ;;
+check)
+    require_name "${2-}"
+    [[ -e "$JARVOS_STATE/$2" ]]
+    ;;
+list)
+    [[ -d "$JARVOS_STATE" ]] || exit 0
+    find "$JARVOS_STATE" -maxdepth 1 -type f -printf '%f\n' | sort
+    ;;
+-h | --help)
+    sed -n '2,12p' "$0"
+    ;;
+*)
+    die "usage: jarvos-state set|clear|check <name> | list"
+    ;;
+esac
