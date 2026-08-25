@@ -322,6 +322,31 @@ run_sync() {
     RUN_STATUS="$status"
 }
 
+# Run any bin/jarvos-* command inside the sandbox. Exported variables set by
+# the caller carry through, so a test can set e.g. JARVOS_LOCK_WAIT=0 before
+# calling. JARVOS_PATH points at the fake baseline so migrations and shipped
+# defaults come from fixtures; the command still finds its real library via
+# the bin/../lib fallback in its preamble.
+run_cmd() {
+    local cmd="$1"
+    shift
+    local out status
+    set +e
+    out="$(env \
+        HOME="$FAKE_HOME" \
+        PATH="$FAKE_BIN:$PATH" \
+        XDG_STATE_HOME="$FAKE_HOME/.local/state" \
+        FAKE_STATE="$FAKE_STATE" \
+        JARVOS_PATH="$FAKE_BASE" \
+        "$REPO_ROOT/bin/$cmd" "$@" 2>&1)"
+    status=$?
+    set -e
+    # shellcheck disable=SC2034  # read by the callers in the test files
+    RUN_OUT="$out"
+    # shellcheck disable=SC2034
+    RUN_STATUS="$status"
+}
+
 # Write a file under the fake home, creating parents.
 home_file() {
     local rel="$1"
