@@ -81,6 +81,7 @@ Item {
         anchors.top: title.bottom
         anchors.bottom: parent.bottom
         anchors.topMargin: Appearance.spacing.smaller
+        anchors.bottomMargin: root.notifCount > 0 ? clearBtnLoader.implicitHeight + Appearance.padding.normal * 2 : 0
 
         radius: Appearance.rounding.small
         color: "transparent"
@@ -166,6 +167,8 @@ Item {
     }
 
     Loader {
+        id: clearBtnLoader
+
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: Appearance.padding.normal
@@ -178,16 +181,17 @@ Item {
             id: clearBtn
 
             icon: "clear_all"
+            type: IconButton.Tonal
             radius: Appearance.rounding.normal
             padding: Appearance.padding.normal
-            font.pointSize: Math.round(Appearance.font.size.large * 1.2)
+            font.pointSize: Appearance.font.size.large
             onClicked: clearTimer.start()
 
             Elevation {
                 anchors.fill: parent
                 radius: parent.radius
                 z: -1
-                level: clearBtn.stateLayer.containsMouse ? 4 : 3
+                level: clearBtn.stateLayer.containsMouse ? 2 : 1
             }
         }
 

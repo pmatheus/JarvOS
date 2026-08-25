@@ -347,18 +347,23 @@ StyledRect {
                 font.pointSize: Appearance.font.size.small
             }
 
-            Item {
+            StyledRect {
                 id: expandBtn
+
+                readonly property color onColour: root.modelData.urgency === NotificationUrgency.Critical ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurface
 
                 anchors.right: parent.right
                 anchors.top: parent.top
 
-                implicitWidth: expandIcon.height
-                implicitHeight: expandIcon.height
+                implicitWidth: expandIcon.implicitHeight + Appearance.padding.smaller * 2
+                implicitHeight: implicitWidth
+
+                radius: Appearance.rounding.full
+                color: Qt.alpha(expandBtn.onColour, 0.08)
 
                 StateLayer {
                     radius: Appearance.rounding.full
-                    color: root.modelData.urgency === NotificationUrgency.Critical ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurface
+                    color: expandBtn.onColour
 
                     function onClicked() {
                         if (root.expanded)
@@ -375,6 +380,7 @@ StyledRect {
 
                     animate: true
                     text: root.expanded ? "expand_less" : "close"
+                    color: expandBtn.onColour
                     font.pointSize: Appearance.font.size.normal
                 }
             }

@@ -1,6 +1,4 @@
 import qs.components.containers
-import qs.components.controls
-import qs.components.effects
 import qs.components.widgets
 import qs.services
 import qs.config
@@ -20,7 +18,6 @@ Item {
     anchors.right: parent.right
 
     implicitWidth: Config.notifs.sizes.width + padding * 2
-    readonly property int clearBtnReservedHeight: Math.round(Appearance.font.size.large * 1.2) + Appearance.padding.normal * 3
     implicitHeight: {
         const count = list.count;
         if (count === 0)
@@ -29,8 +26,6 @@ Item {
         let height = (count - 1) * Appearance.spacing.smaller;
         for (let i = 0; i < count; i++)
             height += list.itemAtIndex(i)?.nonAnimHeight ?? 0;
-
-        height += root.clearBtnReservedHeight;
 
         if (visibilities && panels) {
             if (visibilities.osd) {
@@ -52,7 +47,6 @@ Item {
     ClippingWrapperRectangle {
         anchors.fill: parent
         anchors.margins: root.padding
-        anchors.bottomMargin: root.padding + (list.count > 0 ? root.clearBtnReservedHeight : 0)
 
         color: "transparent"
         radius: Appearance.rounding.normal
@@ -194,47 +188,6 @@ Item {
 
                     return 0;
                 }
-            }
-        }
-    }
-
-    Loader {
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.margins: Appearance.padding.normal
-
-        scale: list.count > 0 ? 1 : 0.5
-        opacity: list.count > 0 ? 1 : 0
-        active: opacity > 0
-
-        sourceComponent: IconButton {
-            id: clearBtn
-
-            icon: "clear_all"
-            radius: Appearance.rounding.normal
-            padding: Appearance.padding.normal
-            font.pointSize: Math.round(Appearance.font.size.large * 1.2)
-            onClicked: Notifs.popups.filter(n => !n.closed).forEach(n => { n.popup = false; })
-
-            Elevation {
-                anchors.fill: parent
-                radius: parent.radius
-                z: -1
-                level: clearBtn.stateLayer.containsMouse ? 4 : 3
-            }
-        }
-
-        Behavior on scale {
-            Anim {
-                duration: Appearance.anim.durations.expressiveFastSpatial
-                easing.bezierCurve: Appearance.anim.curves.expressiveFastSpatial
-            }
-        }
-
-        Behavior on opacity {
-            Anim {
-                duration: Appearance.anim.durations.expressiveFastSpatial
-                easing.bezierCurve: Appearance.anim.curves.expressiveFastSpatial
             }
         }
     }

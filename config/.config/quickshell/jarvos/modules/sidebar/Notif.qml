@@ -4,6 +4,7 @@ import qs.components
 import qs.services
 import qs.config
 import Quickshell
+import Quickshell.Services.Notifications
 import QtQuick
 import QtQuick.Layouts
 
@@ -15,6 +16,8 @@ StyledRect {
     required property bool expanded
     required property var visibilities
 
+    readonly property bool isCritical: modelData.urgency === NotificationUrgency.Critical
+
     readonly property StyledText body: expandedContent.item?.body ?? null
     readonly property real nonAnimHeight: expanded ? summary.implicitHeight + expandedContent.implicitHeight + expandedContent.anchors.topMargin + Appearance.padding.normal * 2 : summaryHeightMetrics.height
 
@@ -22,7 +25,7 @@ StyledRect {
 
     radius: Appearance.rounding.small
     color: {
-        const c = root.modelData.urgency === "critical" ? Colours.palette.m3secondaryContainer : Colours.layer(Colours.palette.m3surfaceContainerHigh, 2);
+        const c = root.isCritical ? Colours.palette.m3secondaryContainer : Colours.layer(Colours.palette.m3surfaceContainerHigh, 2);
         return expanded ? c : Qt.alpha(c, 0);
     }
 
@@ -62,7 +65,7 @@ StyledRect {
 
         width: parent.width
         text: root.modelData.summary
-        color: root.modelData.urgency === "critical" ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurface
+        color: root.isCritical ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurface
         elide: Text.ElideRight
         wrapMode: Text.WordWrap
         maximumLineCount: 1
@@ -89,7 +92,7 @@ StyledRect {
 
         sourceComponent: StyledText {
             text: root.modelData.body.replace(/\n/g, " ")
-            color: root.modelData.urgency === "critical" ? Colours.palette.m3secondary : Colours.palette.m3outline
+            color: root.isCritical ? Colours.palette.m3secondary : Colours.palette.m3outline
             elide: Text.ElideRight
         }
     }
@@ -129,7 +132,7 @@ StyledRect {
                 Layout.fillWidth: true
                 textFormat: Text.MarkdownText
                 text: root.modelData.body.replace(/(.)\n(?!\n)/g, "$1\n\n") || qsTr("No body here! :/")
-                color: root.modelData.urgency === "critical" ? Colours.palette.m3secondary : Colours.palette.m3outline
+                color: root.isCritical ? Colours.palette.m3secondary : Colours.palette.m3outline
                 wrapMode: Text.WordWrap
 
                 onLinkActivated: link => {
