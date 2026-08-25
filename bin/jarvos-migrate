@@ -82,6 +82,10 @@ while IFS= read -r file; do
     # Strictness comes from here, which is why migrations carry no shebang.
     # set -e aborts the whole run on failure, so the marker below is only
     # ever reached on success and a failed migration retries next time.
-    bash -euo pipefail "$file"
+    #
+    # </dev/null keeps a migration off this loop's stdin, which is the pending
+    # list: anything that drained it would silently skip every migration after
+    # itself, unrun and unmarked, while the run still reported success.
+    bash -euo pipefail "$file" </dev/null
     : >"$MARKERS/${file##*/}"
 done < <(pending)
