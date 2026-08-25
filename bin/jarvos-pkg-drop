@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# jarvos-pkg-drop <package>... — remove the ones that are actually there.
+#
+# Verifies afterwards for the same reason jarvos-pkg-add does.
+
+set -euo pipefail
+
+# shellcheck source=lib/jarvos-common.sh
+_lib="$(dirname "$(realpath "$0")")/../lib/jarvos-common.sh"
+if [[ -r "$_lib" ]]; then source "$_lib"; else source /usr/share/jarvos/lib/jarvos-common.sh; fi
+unset _lib
+
+[[ $# -gt 0 ]] || die "usage: jarvos-pkg-drop <package>..."
+
+doomed=()
+for pkg in "$@"; do
+    pacman -Q "$pkg" >/dev/null 2>&1 && doomed+=("$pkg")
+done
+
+[[ ${#doomed[@]} -gt 0 ]] || exit 0
+
+sudo pacman -Rns --noconfirm "${doomed[@]}"
+
+for pkg in "${doomed[@]}"; do
+    pacman -Q "$pkg" >/dev/null 2>&1 &&
+        die "pacman reported success but $pkg is still installed"
+done
+exit 0

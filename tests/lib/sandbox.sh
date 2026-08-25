@@ -204,8 +204,15 @@ case "$*" in
     "-Qq")   cat "$FAKE_STATE/pacman-explicit" ;;
     "-Qqm")  cat "$FAKE_STATE/pacman-foreign" ;;
     -Q*)     for p in "${@:2}"; do grep -qxF "$p" "$FAKE_STATE/pacman-explicit" || exit 1; done ;;
-    -S*)     printf '%s\n' "${@:2}" | grep -v '^--' >> "$FAKE_STATE/pacman-installed"
+    -S*)     [[ -e "$FAKE_STATE/pacman-lies" ]] && exit 0
+             printf '%s\n' "${@:2}" | grep -v '^--' >> "$FAKE_STATE/pacman-installed"
              printf '%s\n' "${@:2}" | grep -v '^--' >> "$FAKE_STATE/pacman-explicit" ;;
+    -R*)     for p in "${@:2}"; do
+                 [[ "$p" == --* ]] && continue
+                 printf '%s\n' "$p" >> "$FAKE_STATE/pacman-removed"
+                 grep -vxF "$p" "$FAKE_STATE/pacman-explicit" > "$FAKE_STATE/.tmp" || true
+                 mv "$FAKE_STATE/.tmp" "$FAKE_STATE/pacman-explicit"
+             done ;;
     *)       exit 0 ;;
 esac
 EOF
