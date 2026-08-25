@@ -2,7 +2,6 @@ pragma Singleton
 
 import qs.config
 import qs.utils
-import Caelestia
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -228,11 +227,10 @@ Singleton {
 
     // searches NetEase and populates the candidates model. returns the result array via the onResults callback
     function _searchNetEase(title, artist, reqId, onResults) {
-        Requests.resetCookies();
         const query = encodeURIComponent(`${title} ${artist}`);
         const url = `https://music.163.com/api/search/get?s=${query}&type=1&limit=5`;
 
-        Requests.get(url, text => {
+        Http.get(url, text => {
             if (reqId !== root.currentRequestId)
                 return;
             const res = JSON.parse(text);
@@ -283,7 +281,7 @@ Singleton {
 
     function fetchNetEaseLyrics(id, reqId) {
         const url = `https://music.163.com/api/song/lyric?id=${id}&lv=1&kv=1&tv=-1`;
-        Requests.get(url, text => {
+        Http.get(url, text => {
             if (reqId !== root.currentRequestId)
                 return;
             const res = JSON.parse(text);
