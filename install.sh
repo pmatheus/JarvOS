@@ -239,6 +239,11 @@ install_dotfiles() {
 
     cp -rf config/.config/* "$XDG_CONFIG_HOME/"
 
+    # A fresh install is already at the state every shipped migration
+    # produces; mark them so first boot migrates nothing.
+    step "Marking shipped migrations as applied..."
+    ./bin/jarvos-migrate --mark-all
+
     # Create default monitors.conf if missing
     MONITORS_CONF="$XDG_CONFIG_HOME/hypr/hyprland/monitors.conf"
     if [[ ! -f "$MONITORS_CONF" ]]; then
