@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# jarvos-migrate — apply the one-time repair scripts a release ships.
+#
+#   jarvos-migrate             run every pending migration, in order
+#   jarvos-migrate --pending   list pending ones; exit 0 if any, 1 if none
+#   jarvos-migrate --mark-all  mark every shipped migration applied, run none
+#
+# Migrations live in $JARVOS_PATH/migrations/<unix-timestamp>.sh, mode 0644
+# and with no shebang: they are data this runner interprets, never programs,
+# so a stray ./ cannot fire one. The timestamp is the commit date of the
+# release that introduced the migration, so lexicographic order IS
+# chronological order and the glob is the whole ordering mechanism.
+#
+# Applied state is one empty marker per migration, per user, because every
+# user on a box must get a chance at every migration.
+
+set -euo pipefail
+
+# shellcheck source=lib/jarvos-common.sh
+_lib="$(dirname "$(realpath "$0")")/../lib/jarvos-common.sh"
+if [[ -r "$_lib" ]]; then source "$_lib"; else source /usr/share/jarvos/lib/jarvos-common.sh; fi
+unset _lib
+
+MARKERS="$JARVOS_STATE/migrations"
+PACMAN_LOCK="${JARVOS_PACMAN_LOCK:-/var/lib/pacman/db.lck}"
+LOCK_WAIT="${JARVOS_LOCK_WAIT:-900}"
+
+pending() {
+    local file
+    for file in "$JARVOS_PATH"/migrations/*.sh; do
+        [[ -e "$file" ]] || continue # an unmatched glob is not a migration
+        [[ -e "$MARKERS/${file##*/}" ]] && continue
+        printf '%s\n' "$file"
+    done
+}
+
+mark_all() {
+    local file
+    mkdir -p "$MARKERS"
+    for file in "$JARVOS_PATH"/migrations/*.sh; do
+        [[ -e "$file" ]] || continue
+        : >"$MARKERS/${file##*/}"
+    done
+}
+
+case "${1-}" in
+--pending)
+    list="$(pending)"
+    [[ -n "$list" ]] || exit 1
+    printf '%s\n' "$list" | sed 's|.*/||'
+    exit 0
+    ;;
+--mark-all)
+    mark_all
+    exit 0
+    ;;
+-h | --help)
+    sed -n '2,20p' "$0"
+    exit 0
+    ;;
+"") ;;
+*)
+    die "unknown argument: $1"
+    ;;
+esac
+
+# A pacman holding the database is a deferral, not an error: the update that
+# is running will call us again.
+waited=0
+while [[ -e "$PACMAN_LOCK" ]]; do
+    if ((waited >= LOCK_WAIT)); then
+        echo "jarvos-migrate: pacman is busy — deferring migrations"
+        exit 0
+    fi
+    sleep 5
+    waited=$((waited + 5))
+done
+
+mkdir -p "$MARKERS"
+while IFS= read -r file; do
+    [[ -n "$file" ]] || continue
+    # Strictness comes from here, which is why migrations carry no shebang.
+    # set -e aborts the whole run on failure, so the marker below is only
+    # ever reached on success and a failed migration retries next time.
+    bash -euo pipefail "$file"
+    : >"$MARKERS/${file##*/}"
+done < <(pending)
