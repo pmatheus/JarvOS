@@ -1,7 +1,6 @@
 pragma Singleton
 
 import qs.config
-import Caelestia
 import Quickshell
 
 Singleton {
@@ -24,7 +23,7 @@ Singleton {
 
     function toLocalFile(path: url): string {
         path = Qt.resolvedUrl(path);
-        return path.toString() ? CUtils.toLocalFile(path) : "";
+        return path.toString() ? Files.toLocalFile(path) : "";
     }
 
     function absolutePath(path: string): string {

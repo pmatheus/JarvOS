@@ -5,7 +5,7 @@ import qs.components.controls
 import qs.components.effects
 import qs.services
 import qs.config
-import Caelestia
+import qs.utils
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Shapes
@@ -184,7 +184,7 @@ Loader {
                         text: qsTr("Delete")
                         type: TextButton.Text
                         onClicked: {
-                            CUtils.deleteFile(Qt.resolvedUrl(root.props.recordingConfirmDelete));
+                            Files.deleteFile(root.props.recordingConfirmDelete);
                             root.props.recordingConfirmDelete = "";
                         }
                     }
