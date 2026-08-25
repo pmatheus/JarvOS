@@ -1187,6 +1187,142 @@ checkout is not a release and reports dev (<hash>)."
 
 ---
 
+## Task 5b: Adopt a user who has never migrated
+
+Added 2026-08-25 after review of Task 4, decided by the chairman.
+
+Pre-marking runs at install, but markers are **per user**. A user account created later on an up-to-date box has no markers, so it would replay every historical migration against config that is already correct — precisely what pre-marking exists to prevent. The spec anticipated this only for machine-wide work (§"Applied state": "migrations doing machine-wide work must no-op when it is already done"), not user-level work.
+
+Adopting from here on is safe *because* v0.3.0 ships zero migrations: everyone existing at the tag is trivially current, so marking them all costs nothing and closes the gap permanently.
+
+**Files:**
+- Modify: `bin/jarvos-migrate` — add `--adopt`
+- Modify: `config/.config/hypr/hyprland/execs.conf` — run it once per login
+- Modify: `tests/jarvos-migrate.test.sh` — append the cases below
+
+**Interfaces:**
+- Produces: `jarvos-migrate --adopt` — if this user has never been adopted, mark every shipped migration applied and record the adoption; otherwise do nothing. Always exits 0.
+- The sentinel is `$JARVOS_STATE/adopted`, deliberately **not** the markers directory. Deleting a marker must still replay that one migration (Task 3 guarantees this); adoption must happen once ever and must not resurrect on a marker wipe.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `tests/jarvos-migrate.test.sh`, before the final `summary` line:
+
+```bash
+# --- adoption ------------------------------------------------------------
+
+reset_world
+rm -f "$FAKE_HOME/.local/state/jarvos/adopted"
+migration 1700000100 'echo hundred >> "$FAKE_STATE/migration-log"'
+
+start_test "a user who has never migrated is adopted, running nothing"
+run_cmd jarvos-migrate --adopt
+assert_status "$RUN_STATUS" 0 &&
+    assert_file_exists "$MARKERS/1700000100.sh" &&
+    { [[ ! -s "$FAKE_STATE/migration-log" ]] || fail_test "adoption ran a migration"; } &&
+    pass_test
+
+start_test "adoption is recorded so it happens once, not every login"
+assert_file_exists "$FAKE_HOME/.local/state/jarvos/adopted" && pass_test
+
+start_test "a migration shipped after adoption still runs"
+migration 1700000101 'echo hundredone >> "$FAKE_STATE/migration-log"'
+run_cmd jarvos-migrate --adopt
+assert_status "$RUN_STATUS" 0 &&
+    assert_no_file "$MARKERS/1700000101.sh" &&
+    pass_test
+run_cmd jarvos-migrate
+assert_contains "$FAKE_STATE/migration-log" "hundredone" && pass_test
+
+start_test "wiping the markers replays migrations rather than re-adopting"
+rm -rf "$MARKERS"
+: >"$FAKE_STATE/migration-log"
+run_cmd jarvos-migrate --adopt
+assert_status "$RUN_STATUS" 0 &&
+    assert_no_file "$MARKERS/1700000100.sh" &&
+    pass_test
+run_cmd jarvos-migrate
+assert_contains "$FAKE_STATE/migration-log" "hundred" && pass_test
+
+start_test "execs.conf adopts once per login"
+assert_contains "$REPO_ROOT/config/.config/hypr/hyprland/execs.conf" "jarvos-migrate --adopt" &&
+    pass_test
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `tests/jarvos-migrate.test.sh`
+
+Expected: the 17 existing cases pass; the new ones FAIL — `--adopt` is an unknown argument.
+
+- [ ] **Step 3: Implement `--adopt`**
+
+In `bin/jarvos-migrate`, add to the `case` block **before** the `-h | --help` branch:
+
+```bash
+--adopt)
+    # A user who has never migrated on an up-to-date box is already at the
+    # state every shipped migration produces. Without this they would replay
+    # all of them against correct config — the thing pre-marking prevents,
+    # displaced from fresh installs to fresh users.
+    #
+    # The sentinel is deliberately not the markers directory: deleting a
+    # marker must still replay that one migration, so adoption is recorded
+    # separately and happens once ever.
+    [[ -e "$JARVOS_STATE/adopted" ]] && exit 0
+    mark_all
+    mkdir -p "$JARVOS_STATE"
+    : >"$JARVOS_STATE/adopted"
+    exit 0
+    ;;
+```
+
+Update the header comment's usage block to document it:
+
+```bash
+#   jarvos-migrate --adopt     mark all applied if this user has never migrated
+```
+
+- [ ] **Step 4: Wire it into login**
+
+In `config/.config/hypr/hyprland/execs.conf`, add above the existing `jarvos-setup --first-run` line:
+
+```
+exec-once = jarvos-migrate --adopt
+```
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `tests/jarvos-migrate.test.sh`
+
+Expected: `jarvos-migrate: 23 passed, 0 failed`, exit 0.
+
+- [ ] **Step 6: Run the full suite and commit**
+
+Run: `tests/run-all.sh`
+
+Expected: every suite passes, `shellcheck` clean, exit 0.
+
+```bash
+git add bin/jarvos-migrate config/.config/hypr/hyprland/execs.conf tests/jarvos-migrate.test.sh
+git commit -m "feat(runtime): adopt users who have never migrated
+
+Pre-marking runs at install, but markers are per user, so an account
+created later on an up-to-date box had no markers and would replay every
+historical migration against config that is already correct — exactly what
+pre-marking exists to prevent, displaced from fresh installs to fresh
+users.
+
+--adopt marks everything shipped for a user who has never migrated, and
+records that separately from the markers themselves: deleting one marker
+must still replay that migration, while adoption happens once ever.
+
+Safe to adopt from here on because v0.3.0 ships zero migrations, so every
+user existing at the tag is trivially current."
+```
+
+---
+
 ## Task 6: Cut `v0.3.0` — the first release boundary
 
 The repo has zero tags today, so there are no release boundaries to migrate *between*. This creates the first one.
