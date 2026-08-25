@@ -18,9 +18,39 @@ dependent on a half-finished port.
 
 ## Goal
 
-`config/.config/quickshell/jarvos/` contains no `import Caelestia*`, the shell
-runs without `caelestia-shell` installed, and no feature is lost except where
-this document says otherwise.
+The shell runs with neither `caelestia-shell` nor `caelestia-cli` installed,
+and no feature is lost except where this document says otherwise.
+
+## The coupling is five layers, not one
+
+Each scan of this codebase found one mechanism and missed the others. The
+complete picture, so nothing else surfaces mid-implementation:
+
+| Layer | Extent |
+|---|---|
+| QML type imports | 19 types across 39 files |
+| CLI shell-outs | 14 `execDetached(["caelestia", ...])` sites |
+| User state paths | `~/.config/caelestia/`, and the state, cache and data dirs, in `utils/Paths.qml:14-17` |
+| Env vars and names | `CAELESTIA_XKB_RULES_PATH`, `CAELESTIA_WALLPAPERS_DIR`, `CAELESTIA_RECORDINGS_DIR`, `CAELESTIA_LIB_DIR`; `qs -c caelestia`; the systemd unit; `bin/jarvos-setup`; `/usr/lib/caelestia` |
+| Hypr and scripts | `keybinds.conf` (`caelestia:` dispatch), `rules.conf`, `execs.conf`, `animations.conf`, `custom/keybinds.conf`, `scripts/colors/switchwall.sh`, `assets/wrap_term_launch.sh` |
+
+Plus the package manifests in `system/packages/` and
+`system/continuity/dotfiles.allow`.
+
+## Phasing: uncouple first, rename later
+
+Decided 2026-08-25. **This spec covers only removing the code dependency** —
+the imports, the CLI calls, and the packages.
+
+The `caelestia` *name* stays put throughout: `~/.config/caelestia/shell.json`
+keeps holding live settings (the bar layout is persisted there), `qs -c
+caelestia` keeps working, and the `caelestia:` keybind namespace keeps
+dispatching. Renaming those moves user state and ships **afterwards, as its own
+migration**, against a shell already proven to run uncoupled.
+
+Combining the two would put "stop depending on their code" and "move all your
+live settings" in one step, where a mid-way failure leaves a desktop that finds
+neither its old config nor its new one.
 
 ## Non-goals
 
@@ -244,6 +274,39 @@ is not, say so rather than working around it.
 The keybind namespace rename touches user config that may have local
 overrides in `hyprland/custom/`. Those are not tracked and must not be
 clobbered.
+
+## How this is tested
+
+QML is not testable the way the bash maintenance layer was, so the strategy is
+to make the parts that *can* be tested actually testable, and to be honest
+about the rest.
+
+**Use the Qt 6 runner, not the one on `$PATH`.** `/usr/bin/qmltestrunner` is
+Qt 5 (from `qt5-declarative`) and fails **silently with exit 1 and no output**
+against our Qt 6 modules. The working binary is
+`/usr/lib/qt6/bin/qmltestrunner`, run under `QT_QPA_PLATFORM=offscreen`.
+
+**Extract logic into `.js`, then unit-test it.** Qt resolves
+`import "foo.js" as Foo` directly, with no `qmldir` and no module registration.
+Our `qs.*` imports are a Quickshell convention that plain Qt cannot resolve, so
+QML components importing them are not loadable under the test runner — but a
+`.pragma library` JS file is. Every replacement with real logic — the ring
+buffer, the toast queue, favourites ordering and fuzzy matching, URL building,
+`cava` and `aubio` stdout parsing, scheme JSON — puts that logic in `.js` and
+gets genuine red-green tests. The QML component becomes thin wiring over a
+tested core, which is better design regardless.
+
+**`qmllint` is not a usable gate here.** It cannot resolve `qs.*` either, so
+every file reports "Failed to import qs.config" and cascading false
+"Unqualified access" warnings, and it exits 0 regardless. Do not build a gate
+on it without first generating `qmldir` files, which is out of scope.
+
+**Everything else is verified by running it:** the shell launches, and
+`qs log -c caelestia -r '*=true'` shows no new QML errors, plus a behavioural
+check of the affected surface against the current build. Rendering work
+(`Sparkline`, `CircularIndicator`) needs a side-by-side visual comparison —
+it is the easiest place in this port to produce something subtly wrong rather
+than obviously broken.
 
 ## Verification
 
