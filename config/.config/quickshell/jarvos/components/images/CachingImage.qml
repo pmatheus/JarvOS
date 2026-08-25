@@ -1,6 +1,6 @@
 import QtQuick
 import Quickshell
-import Caelestia.Images
+import qs.utils
 
 Image {
     id: root
@@ -9,7 +9,7 @@ Image {
 
     asynchronous: true
     fillMode: Image.PreserveAspectCrop
-    source: path ? IUtils.urlForPath(path, fillMode) : ""
+    source: path ? Files.urlForPath(path) : ""
     sourceSize: {
         const dpr = (QsWindow.window as QsWindow)?.devicePixelRatio ?? 1;
         return Qt.size(width * dpr, height * dpr);
