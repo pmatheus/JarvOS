@@ -167,4 +167,43 @@ assert_status "$RUN_STATUS" 0 &&
     assert_file_exists "$MARKERS/1700000091.sh" &&
     pass_test
 
+# --- adoption ------------------------------------------------------------
+
+reset_world
+rm -f "$FAKE_HOME/.local/state/jarvos/adopted"
+migration 1700000100 'echo hundred >> "$FAKE_STATE/migration-log"'
+
+start_test "a user who has never migrated is adopted, running nothing"
+run_cmd jarvos-migrate --adopt
+assert_status "$RUN_STATUS" 0 &&
+    assert_file_exists "$MARKERS/1700000100.sh" &&
+    { [[ ! -s "$FAKE_STATE/migration-log" ]] || fail_test "adoption ran a migration"; } &&
+    pass_test
+
+start_test "adoption is recorded so it happens once, not every login"
+assert_file_exists "$FAKE_HOME/.local/state/jarvos/adopted" && pass_test
+
+start_test "a migration shipped after adoption still runs"
+migration 1700000101 'echo hundredone >> "$FAKE_STATE/migration-log"'
+run_cmd jarvos-migrate --adopt
+assert_status "$RUN_STATUS" 0 &&
+    assert_no_file "$MARKERS/1700000101.sh" &&
+    pass_test
+run_cmd jarvos-migrate
+assert_contains "$FAKE_STATE/migration-log" "hundredone" && pass_test
+
+start_test "wiping the markers replays migrations rather than re-adopting"
+rm -rf "$MARKERS"
+: >"$FAKE_STATE/migration-log"
+run_cmd jarvos-migrate --adopt
+assert_status "$RUN_STATUS" 0 &&
+    assert_no_file "$MARKERS/1700000100.sh" &&
+    pass_test
+run_cmd jarvos-migrate
+assert_contains "$FAKE_STATE/migration-log" "hundred" && pass_test
+
+start_test "execs.conf adopts once per login"
+assert_contains "$REPO_ROOT/config/.config/hypr/hyprland/execs.conf" "jarvos-migrate --adopt" &&
+    pass_test
+
 summary "jarvos-migrate"

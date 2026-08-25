@@ -4,6 +4,7 @@
 #   jarvos-migrate             run every pending migration, in order
 #   jarvos-migrate --pending   list pending ones; exit 0 if any, 1 if none
 #   jarvos-migrate --mark-all  mark every shipped migration applied, run none
+#   jarvos-migrate --adopt     mark all applied if this user has never migrated
 #
 # Migrations live in $JARVOS_PATH/migrations/<unix-timestamp>.sh, mode 0644
 # and with no shebang: they are data this runner interprets, never programs,
@@ -52,6 +53,21 @@ case "${1-}" in
     ;;
 --mark-all)
     mark_all
+    exit 0
+    ;;
+--adopt)
+    # A user who has never migrated on an up-to-date box is already at the
+    # state every shipped migration produces. Without this they would replay
+    # all of them against correct config — the thing pre-marking prevents,
+    # displaced from fresh installs to fresh users.
+    #
+    # The sentinel is deliberately not the markers directory: deleting a
+    # marker must still replay that one migration, so adoption is recorded
+    # separately and happens once ever.
+    [[ -e "$JARVOS_STATE/adopted" ]] && exit 0
+    mark_all
+    mkdir -p "$JARVOS_STATE"
+    : >"$JARVOS_STATE/adopted"
     exit 0
     ;;
 -h | --help)
