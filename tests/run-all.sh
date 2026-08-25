@@ -12,9 +12,15 @@ for t in tests/*.test.sh; do
     "$t" || fail=1
 done
 
+# The QML unit suites are not a bash suite: they run under the Qt 6
+# qmltestrunner and do not source tests/lib/sandbox.sh, so the glob above
+# deliberately does not reach them.
+printf '\n== tests/qml/run.sh\n'
+tests/qml/run.sh || fail=1
+
 # The two jarvos-sync suites predate this gate and carry findings of their own;
 # every other suite is in scope, including ones added later.
-lint=(bin/jarvos-* lib/*.sh tests/run-all.sh tests/lib/*.sh)
+lint=(bin/jarvos-* lib/*.sh tests/run-all.sh tests/lib/*.sh tests/qml/run.sh)
 for t in tests/*.test.sh; do
     [[ "$t" == *jarvos-sync-* ]] || lint+=("$t")
 done
