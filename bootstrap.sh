@@ -148,6 +148,12 @@ deploy_dotfiles(){
     run mkdir -p "$cfg"
     run cp -rf "$base/config/.config/." "$cfg/"
 
+    # Every migration this release ships is already true of a fresh install.
+    # Without this, migration N would have to be safe on a machine that never
+    # had state N-1 — a contract that collapses after about fifty of them.
+    step "marking shipped migrations as applied…"
+    run "$base/bin/jarvos-migrate" --mark-all
+
     mon="$cfg/hypr/hyprland/monitors.conf"
     if $DRY_RUN || [[ ! -f "$mon" ]]; then
         user_write "$mon" "# MONITOR CONFIG — edit for your setup
