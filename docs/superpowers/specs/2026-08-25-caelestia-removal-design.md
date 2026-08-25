@@ -169,6 +169,30 @@ An animation state machine, expressible in QML `Behavior`/`Animator` but the
 easiest place in this port to produce something that looks subtly wrong.
 Verify against the current build visually, side by side.
 
+## The CLI coupling the import scan missed
+
+The reconnaissance behind this spec traced QML **imports**, so it did not see
+`caelestia-cli`. The shell shells out to it at 14 sites, and removing the
+plugin without replacing these leaves the shell just as coupled:
+
+| Command | Sites | Replacement |
+|---|---|---|
+| `caelestia scheme set/get/list` | 6 — `services/Colours.qml:78`, `modules/launcher/services/Schemes.qml:43,67,85`, `modules/launcher/services/M3Variants.qml:82`, `modules/controlcenter/appearance/sections/{ColorSchemeSection.qml:46,ColorVariantSection.qml:41}` | Our own scheme store and `matugen` invocation |
+| `caelestia wallpaper -f/-p/-r` | 3 — `services/Wallpapers.qml:24,85`, `config/LauncherConfig.qml:78` | Our own wallpaper setter |
+| `caelestia record` | 3 — `services/Recorder.qml:54,58,62` | `wf-recorder` or `gpu-screen-recorder`, both already installed |
+| `caelestia shell controlCenter open` | 1 — `config/LauncherConfig.qml:142` | Our own `IpcHandler`, which the shell already has |
+| cosmetic strings | 2 — `components/misc/CustomShortcut.qml:4` (`appid`), `utils/SysInfo.qml:39` (logo name) | Rename |
+
+`caelestia-cli` is a Python package; none of this is C++ and none of it needs
+vendoring.
+
+The scheme commands are the substantial ones: they own reading and writing the
+colour scheme, listing available schemes and flavours, and setting the M3
+variant. **The follow-on theming work replaces this layer wholesale** (see
+below), so the port here should be the thinnest faithful equivalent that gets
+the shell off the CLI — not a polished design. Do not gold-plate something
+scheduled for replacement.
+
 ## External processes
 
 Two features stay on their native libraries by running them as processes under
@@ -199,7 +223,9 @@ easy work shakes out the pattern before the hard work depends on it:
 5. `AppDb`, `SparklineItem`, `CircularIndicatorManager`.
 6. `HyprExtras`/`HyprKeyboard`, `LogindManager`.
 7. `CavaProvider` and `BeatTracker` → helper processes.
-8. Remove the dependency: drop `caelestia-shell` and `caelestia-cli`, unwind
+8. Replace the `caelestia-cli` call sites: recording, wallpaper, the control
+   centre IPC call, then the scheme commands.
+9. Remove the dependency: drop `caelestia-shell` and `caelestia-cli`, unwind
    the `qs -c caelestia` config name and the
    `~/.config/quickshell/caelestia → jarvos` symlink, rename the `caelestia:`
    IPC keybind namespace to `jarvos:`.
@@ -233,6 +259,26 @@ clobbered.
 5. The migration takes an existing machine off the packages and is a clean
    no-op on second run.
 6. `tests/run-all.sh` still passes.
+
+## Follow-on: workspace-scoped job theming
+
+Decided 2026-08-25, to be specced separately **after** this work lands. Noted
+here because it determines how much effort the scheme port above deserves.
+
+JarvOS will grow an omarchy-style theming system, expanded in two ways: themes
+are bound to **job contexts** (bug bounty, development, CTF, DFIR and threat
+hunting), and scoped to **Hyprland workspaces** rather than monitors.
+
+Workspace scoping rather than per-monitor was chosen deliberately. Apps cannot
+follow a monitor — a terminal does not know which screen it is on, and takes
+its colours from its own config — so per-monitor theming could only ever have
+covered shell chrome and wallpaper, while costing a refactor of the 1,222
+`Colours.*` references currently reading a global singleton. Workspaces map to
+jobs far better than monitors do, are already per-monitor in Hyprland, and can
+theme the apps launched inside them.
+
+Consequences for this spec: the scheme port in step 8 is throwaway
+scaffolding. Keep it minimal.
 
 ## Open questions
 
