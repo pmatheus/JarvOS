@@ -81,6 +81,30 @@ ignores every subdirectory, which broke `-c` name resolution.
 - SDDM and GRUB themes
 - Supports `--minimal` flag to skip boot theming
 
+### Maintenance layer
+
+Runtime commands live in `bin/` and reach `$PATH` through the `jarvos`
+package. They find their library through `bin/../lib/jarvos-common.sh`,
+falling back to `/usr/share/jarvos/lib/jarvos-common.sh` when installed.
+
+`migrations/<unix-timestamp>.sh` holds one-time repair scripts for machines
+that already exist. The timestamp is the commit date of the release that
+introduces the migration:
+
+    git log -1 --format=%cd --date=unix
+
+Migrations are mode `0644` with **no shebang** — the runner supplies
+`bash -euo pipefail`. Write them as an `echo` of the intent, then a comment
+saying why, then a guarded action in the `jarvos-pkg-*` vocabulary. The
+guard is the idempotency.
+
+Both installers call `jarvos-migrate --mark-all`, so a fresh install never
+runs a shipped migration. This is what lets a migration assume the state of
+the release before it. `execs.conf` calls `jarvos-migrate --adopt` at login,
+which does the same once for a user account created after the install.
+
+Run `tests/run-all.sh` before committing anything under `bin/` or `lib/`.
+
 ## Key Patterns
 
 - Custom overrides go in `hyprland/custom/*.conf` (not tracked)
