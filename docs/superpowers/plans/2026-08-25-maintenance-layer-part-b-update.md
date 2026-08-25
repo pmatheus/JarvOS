@@ -1709,7 +1709,8 @@ Criteria 9 and 10 belong to spec §12 step 6 (shell relocation), which is not in
 
 Deliberately deferred, tracked so they are not mistaken for oversights:
 
-- **Shell relocation to `/etc/xdg/quickshell/jarvos/`** (spec §12 step 6). Independent of everything here.
+- **The Caelestia hard fork** — decided 2026-08-25, sequenced deliberately *after* this plan; see `docs/decisions/2026-08-25-caelestia-hard-fork.md`. It needs the migration machinery Part A builds in order to move existing machines across the namespace rename, which is why it comes second. One consequence for **Task 12**: the PKGBUILD written there packages the runtime only. Do not try to anticipate the forked plugin package in it — that is a second package, designed once the fork is scoped.
+- **Shell relocation to `/etc/xdg/quickshell/jarvos/`** (spec §12 step 6). Independent of everything here, but entangled with the fork — settle the fork's package layout before choosing the path.
 - **The Hyprland override spike** (spec §3, §12 step 7). Unresolved by design — three options, none chosen, needs evidence.
 - **Channels and the one-month-behind mirror** (spec §9, §12 step 8). The only item needing infrastructure we do not run. It is also the direct answer to the Qt 6.11.1 → 6.11.2 failure in spec §1, so it should not stay deferred long.
 - **Package reconciliation** (spec §10). A manifest change still needs a hand-written migration; the CI check that catches a missing one is not built.
