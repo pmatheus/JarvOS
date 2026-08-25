@@ -203,7 +203,12 @@ case "$*" in
     "-Qqe")  cat "$FAKE_STATE/pacman-explicit" ;;
     "-Qq")   cat "$FAKE_STATE/pacman-explicit" ;;
     "-Qqm")  cat "$FAKE_STATE/pacman-foreign" ;;
-    -Q*)     for p in "${@:2}"; do grep -qxF "$p" "$FAKE_STATE/pacman-explicit" || exit 1; done ;;
+    -Q*)     for p in "${@:2}"; do
+                 grep -qxF "$p" "$FAKE_STATE/pacman-explicit" || exit 1
+                 [[ -e "$FAKE_STATE/pacman-version-$p" ]] &&
+                     printf '%s %s\n' "$p" "$(cat "$FAKE_STATE/pacman-version-$p")"
+             done
+             exit 0 ;;
     -S*)     [[ -e "$FAKE_STATE/pacman-lies" ]] && exit 0
              printf '%s\n' "${@:2}" | grep -v '^--' >> "$FAKE_STATE/pacman-installed"
              printf '%s\n' "${@:2}" | grep -v '^--' >> "$FAKE_STATE/pacman-explicit" ;;
@@ -333,7 +338,9 @@ run_sync() {
 # the caller carry through, so a test can set e.g. JARVOS_LOCK_WAIT=0 before
 # calling. JARVOS_PATH points at the fake baseline so migrations and shipped
 # defaults come from fixtures; the command still finds its real library via
-# the bin/../lib fallback in its preamble.
+# the bin/../lib fallback in its preamble. A caller that needs to pose as a
+# packaged install overrides it the way run_sync's directories are overridden:
+# JARVOS_PATH=/usr/share/jarvos run_cmd jarvos-version.
 run_cmd() {
     local cmd="$1"
     shift
@@ -344,7 +351,7 @@ run_cmd() {
         PATH="$FAKE_BIN:$PATH" \
         XDG_STATE_HOME="$FAKE_HOME/.local/state" \
         FAKE_STATE="$FAKE_STATE" \
-        JARVOS_PATH="$FAKE_BASE" \
+        JARVOS_PATH="${JARVOS_PATH:-$FAKE_BASE}" \
         "$REPO_ROOT/bin/$cmd" "$@" 2>&1)"
     status=$?
     set -e
