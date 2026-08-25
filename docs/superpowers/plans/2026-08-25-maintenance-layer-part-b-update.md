@@ -1396,8 +1396,12 @@ assert_contains "$PKGBUILD" "/usr/share/jarvos/modules" && pass_test
 start_test "a LICENSE exists — the repo is not distributable without one"
 assert_file_exists "$REPO_ROOT/LICENSE" && pass_test
 
-start_test "the PKGBUILD points at that license"
-assert_contains "$PKGBUILD" "license=" && pass_test
+start_test "the PKGBUILD declares GPL3, the copyleft the shell inherits"
+assert_contains "$PKGBUILD" "GPL3" && pass_test
+
+start_test "the LICENSE is the full GPLv3, not a stub"
+[[ "$(wc -l <"$REPO_ROOT/LICENSE")" -gt 600 ]] &&
+    pass_test || fail_test "LICENSE is too short to be the GPLv3 text"
 
 start_test "the secret gate installs itself rather than waiting to be asked"
 assert_contains "$REPO_ROOT/bootstrap.sh" "core.hooksPath" && pass_test
@@ -1411,17 +1415,34 @@ Run: `chmod +x tests/jarvos-package.test.sh && tests/jarvos-package.test.sh`
 
 Expected: every case FAILs.
 
-- [ ] **Step 3: Confirm the license with the chairman before writing it**
+- [ ] **Step 3: Write the LICENSE — GPL-3.0-only, decided, do not revisit**
 
-The license choice is not yours. Before Step 4, ask which license JarvOS ships under — MIT, GPL-3.0, and Apache-2.0 are the plausible options and `~/jarvos-iso` already has one whose choice should probably be matched. Check it first:
+**The license is GPL-3.0-only for the whole repository.** This is settled; do not substitute MIT because `~/jarvos-iso` uses it.
 
-Run: `head -3 ~/jarvos-iso/LICENSE`
+The reason, so nobody "corrects" it later: `config/.config/quickshell/jarvos/` is a fork of `caelestia-shell`, which is **GPL-3.0-only**. Not "or later" — only. It is copyleft, so a derivative work must carry the same license, and the repository ships that derivative alongside everything else.
 
-If it names a license, match it and say so. If it does not, stop and ask.
+Copy the canonical text rather than reproducing it from memory — the machine already has it:
 
-- [ ] **Step 4: Write the LICENSE**
+Run: `cp /usr/share/licenses/caelestia-shell/LICENSE LICENSE && head -3 LICENSE && wc -l LICENSE`
 
-Write the full text of the chosen license to `LICENSE`, with the copyright line naming the project and the current year. Do not paraphrase or truncate it — a partial license text is not a license.
+Expected: `GNU GENERAL PUBLIC LICENSE / Version 3, 29 June 2007` and 674 lines. A truncated or paraphrased license is not a license.
+
+- [ ] **Step 4: Record the attribution the GPL requires**
+
+Add to `README.md`, under the existing credits section:
+
+```markdown
+## License
+
+JarvOS is licensed under the GNU General Public License v3.0 only — see
+[LICENSE](LICENSE).
+
+The JarvOS shell (`config/.config/quickshell/jarvos/`) is a fork of
+[Caelestia](https://github.com/caelestia-dots/caelestia), which is
+GPL-3.0-only. That copyleft is why the whole repository is GPL-3.0-only.
+```
+
+Also flag for the chairman, without acting on it: `~/jarvos-iso` is currently MIT. If it bundles the shell, its license is inconsistent with this one and needs the same treatment. That is a separate repository and out of scope here — report it, do not change it.
 
 - [ ] **Step 5: Write the PKGBUILD**
 
@@ -1435,7 +1456,7 @@ pkgrel=1
 pkgdesc="JarvOS runtime: maintenance commands, migrations, and shipped defaults"
 arch=('any')
 url="https://github.com/jarvos/JarvOS"
-license=('MIT')
+license=('GPL3')
 depends=('bash' 'git' 'pacman' 'util-linux')
 optdepends=(
     'snapper: rollback point before each update'
@@ -1480,8 +1501,6 @@ package() {
 }
 ```
 
-Set `license=()` to match whatever Step 3 decided.
-
 Create `packaging/jarvos/.gitignore`:
 
 ```
@@ -1507,7 +1526,7 @@ A fresh clone currently ships with no pre-commit gate at all — it has to be op
 
 Run: `tests/jarvos-package.test.sh`
 
-Expected: `jarvos-package: 9 passed, 0 failed`, exit 0.
+Expected: `jarvos-package: 10 passed, 0 failed`, exit 0.
 
 - [ ] **Step 8: Build the package for real**
 
@@ -1551,7 +1570,8 @@ Under `## [Unreleased]` in `CHANGELOG.md`:
   `pre-refresh-pacman` and `theme-set`. A failing hook never aborts a run.
 - `jarvos-restart-shell` and marker-driven restart dispatch.
 - A `PKGBUILD`, so the runtime tooling reaches `$PATH` for the first time.
-- A LICENSE.
+- A LICENSE: GPL-3.0-only, inherited from the Caelestia fork the shell
+  derives from.
 
 ### Changed
 
