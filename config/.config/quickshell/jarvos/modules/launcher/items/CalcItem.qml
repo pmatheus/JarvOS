@@ -1,7 +1,7 @@
 import qs.components
 import qs.services
 import qs.config
-import Caelestia
+import qs.utils
 import Quickshell
 import QtQuick
 import QtQuick.Layouts
@@ -12,8 +12,49 @@ Item {
     required property var list
     readonly property string math: list.search.text.slice(`${Config.launcher.actionPrefix}calc `.length)
 
+    // qalc runs out of process, so an answer lands after the keystroke that
+    // asked for it. This holds the last one that arrived; the previous answer
+    // stays on screen while the next runs, so typing never blanks the display.
+    property string answer
+
+    // At most one qalc at a time. A keystroke arriving while one runs is held
+    // here and run on completion, so a burst of typing collapses to the final
+    // expression instead of spawning a process per character.
+    property bool evaluating
+    property var pending
+
+    onMathChanged: root.evaluate(math)
+    Component.onCompleted: root.evaluate(math)
+
+    function evaluate(expr: string): void {
+        if (root.evaluating) {
+            root.pending = expr;
+            return;
+        }
+
+        if (!expr) {
+            root.answer = "";
+            return;
+        }
+
+        root.evaluating = true;
+        Calc.evaluate(expr, true, res => {
+            root.evaluating = false;
+
+            // A superseded answer is never painted: showing it before the newer
+            // one lands is exactly the flicker this avoids.
+            if (root.pending === undefined)
+                root.answer = res;
+            else {
+                const next = root.pending;
+                root.pending = undefined;
+                root.evaluate(next);
+            }
+        });
+    }
+
     function onClicked(): void {
-        Quickshell.execDetached(["wl-copy", Qalculator.eval(math, false)]);
+        Calc.evaluate(root.math, false, res => Quickshell.execDetached(["wl-copy", res]));
         root.list.visibilities.launcher = false;
     }
 
@@ -55,7 +96,7 @@ Item {
                 return Colours.palette.m3onSurface;
             }
 
-            text: root.math.length > 0 ? Qalculator.eval(root.math) : qsTr("Type an expression to calculate")
+            text: root.math.length > 0 ? root.answer : qsTr("Type an expression to calculate")
             elide: Text.ElideLeft
 
             Layout.fillWidth: true
