@@ -153,4 +153,18 @@ start_test "an unknown argument is refused"
 run_cmd jarvos-migrate --frobnicate
 assert_status "$RUN_STATUS" 1 && pass_test
 
+# The runner feeds the pending list to its own loop. If a migration inherits
+# that as stdin and consumes it, every later migration vanishes from the loop
+# unrun and unmarked, while the run still reports success.
+reset_world
+migration 1700000090 'cat >/dev/null; echo ninety >> "$FAKE_STATE/migration-log"'
+migration 1700000091 'echo ninetyone >> "$FAKE_STATE/migration-log"'
+
+start_test "a migration that reads stdin does not swallow the ones after it"
+run_cmd jarvos-migrate
+assert_status "$RUN_STATUS" 0 &&
+    assert_contains "$FAKE_STATE/migration-log" "ninetyone" &&
+    assert_file_exists "$MARKERS/1700000091.sh" &&
+    pass_test
+
 summary "jarvos-migrate"
