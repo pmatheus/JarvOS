@@ -2,7 +2,6 @@ pragma Singleton
 
 import qs.config
 import qs.utils
-import Caelestia
 import Quickshell
 import QtQuick
 
@@ -37,7 +36,7 @@ Singleton {
                 fetchCoordsFromCity(configLocation);
             }
         } else if (!loc || timer.elapsed() > 900) {
-            Requests.get("https://ipinfo.io/json", text => {
+            Http.get("https://ipinfo.io/json", text => {
                 const response = JSON.parse(text);
                 if (response.loc) {
                     loc = response.loc;
@@ -58,7 +57,7 @@ Singleton {
 
         const fallbackToBigDataCloud = () => {
             const fallbackUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`;
-            Requests.get(fallbackUrl, text => {
+            Http.get(fallbackUrl, text => {
                 const geo = JSON.parse(text);
                 const geoCity = geo.city || geo.locality;
                 if (geoCity) {
@@ -71,7 +70,7 @@ Singleton {
         };
 
         const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=geocodejson`;
-        Requests.get(nominatimUrl, text => {
+        Http.get(nominatimUrl, text => {
             const geo = JSON.parse(text).features?.[0]?.properties.geocoding;
             if (geo) {
                 const geoCity = geo.type === "city" ? geo.name : geo.city;
@@ -88,7 +87,7 @@ Singleton {
     function fetchCoordsFromCity(cityName: string): void {
         const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityName)}&count=1&language=en&format=json`;
 
-        Requests.get(url, text => {
+        Http.get(url, text => {
             const json = JSON.parse(text);
             if (json.results && json.results.length > 0) {
                 const result = json.results[0];
@@ -106,7 +105,7 @@ Singleton {
         if (url === "")
             return;
 
-        Requests.get(url, text => {
+        Http.get(url, text => {
             const json = JSON.parse(text);
             if (!json.current || !json.daily)
                 return;
