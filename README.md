@@ -314,4 +314,9 @@ one.
 
 ## License
 
-MIT
+JarvOS is licensed under the GNU General Public License v3.0 only — see
+[LICENSE](LICENSE).
+
+The JarvOS shell (`config/.config/quickshell/jarvos/`) derives from
+[Caelestia](https://github.com/caelestia-dots/caelestia), which is
+GPL-3.0-only. That copyleft is why the whole repository is GPL-3.0-only.
