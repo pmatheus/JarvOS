@@ -582,6 +582,28 @@ across the whole shell, and a plain average would make greens read dark."
 - The shell launches, `qs log -c caelestia -r '*=true'` shows no new QML errors, and every surface listed in the verification steps works.
 - `caelestia-shell` is still installed and the `caelestia` name is untouched everywhere.
 
+## Findings to act on separately
+
+**Nominatim reverse-geocoding has always been failing.** Discovered during
+Task 4 and confirmed independently: `nominatim.openstreetmap.org` returns 403
+with no User-Agent **and** 403 for a generic `Mozilla/5.0`, but 200 for an
+identifying one such as `JarvOS/0.3.0 (desktop shell)`. The shell has therefore
+always fallen through to BigDataCloud at `services/Weather.qml:74` — the
+"fallback" is the live path and the primary geocoder never worked.
+
+This predates the port and was not caused by it. Task 4 deliberately did not
+fix it: that task's contract is to replace the implementation without changing
+behaviour. Now that `Http.get` takes a headers argument the fix is one call
+site, but it changes which geocoding service answers, so it is its own change
+with its own verification. Note that Nominatim's usage policy requires an
+identifying User-Agent and rate-limits clients.
+
+**The region-screenshot crop from Task 3 is unverified.** It cannot be
+exercised without a human drag — the picker is reachable over IPC but
+`hypr-box input click` has no press-and-hold primitive. Needs one manual
+region screenshot to confirm the output matches the selected rectangle rather
+than the full screen.
+
 ## Handoff to Part 2
 
 Record for the next plan:
