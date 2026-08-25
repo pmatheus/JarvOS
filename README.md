@@ -291,6 +291,19 @@ monitor = HDMI-A-1, 1920x1080@60, 2560x0, 1
 
 **Restart the shell:** `systemctl --user restart quickshell-jarvos.service` (Super+Ctrl+Alt+R).
 
+## Maintenance
+
+```
+jarvos-version              which JarvOS is this
+jarvos-migrate --pending    what a new release wants to repair
+jarvos-migrate              apply it
+jarvos-state list           what the runtime has flagged
+```
+
+Migrations run once per machine per user and record themselves under
+`~/.local/state/jarvos/migrations/`. Delete a marker to replay exactly that
+one.
+
 ## Credits
 
 - [chsoares/hypr-arch](https://github.com/chsoares/hypr-arch) — Original dotfiles foundation, installer, SDDM/GRUB theming, and desktop integration
