@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# jarvos-update — the single blessed way to bring a machine current.
+#
+#   jarvos-update       ask before starting
+#   jarvos-update -y    unattended: steps that would prompt report and skip
+#
+# This file is ORCHESTRATION ONLY. Every step is a separate command, which
+# is what keeps this readable and what makes the ordering testable.
+#
+# The ordering below is not stylistic. Each line of it is a constraint:
+#   prune before snapshot   the cache is on the snapshotted subvolume, so
+#                           pruning after it frees nothing until the
+#                           snapshot ages out
+#   git before packages     a merge conflict must abort before any system
+#                           mutation
+#   keyring before packages a stale keyring fails the main transaction
+#                           unrecoverably, in the middle
+#   migrations after them   migrations ship with the packages above and are
+#                           written against them
+#   AUR last                a broken third-party build must not take down
+#                           the system update
+#
+# Recovery is out-of-band: reboot into the snapshot, or just re-run. Every
+# step is --needed-guarded or marker-guarded, so retry is a real remedy.
+#
+# Seams: JARVOS_UPDATE_TRANSCRIPT, JARVOS_UPDATE_LOCK_FD, JARVOS_MIN_FREE_GIB,
+#        JARVOS_LOCK_FILE
+
+set -euo pipefail
+
+# shellcheck source=lib/jarvos-common.sh
+_lib="$(dirname "$(realpath "$0")")/../lib/jarvos-common.sh"
+if [[ -r "$_lib" ]]; then source "$_lib"; else source /usr/share/jarvos/lib/jarvos-common.sh; fi
+unset _lib
+
+TRANSCRIPT="${JARVOS_UPDATE_TRANSCRIPT:-}"
+LOCK_FILE="${JARVOS_LOCK_FILE:-/tmp/jarvos-update.lock}"
+MIN_FREE_GIB="${JARVOS_MIN_FREE_GIB:-10}"
+
+# --- prelude 1: a transcript, without killing pacman's progress bars -----
+# script(1) keeps a PTY, which a plain `| tee` does not; the env var is the
+# recursion guard.
+if [[ -z "$TRANSCRIPT" ]]; then
+    export JARVOS_UPDATE_TRANSCRIPT=/tmp/jarvos-update.log
+    exec script -qefc "$0 $*" "$JARVOS_UPDATE_TRANSCRIPT"
+fi
+
+# --- prelude 2: inhibit sleep for the duration ---------------------------
+# Before the lock, not after it: systemd-inhibit closes every descriptor
+# above 2 in the command it runs while keeping the inherited copy itself, so
+# a lock taken first would be held by a process that is no longer us and the
+# re-exec'd shell would block on flock forever. Re-execing here also means
+# the prune and the snapshot below happen once, not once per re-exec.
+if command -v systemd-inhibit >/dev/null 2>&1 && [[ -z "${JARVOS_UPDATE_INHIBITED:-}" ]]; then
+    export JARVOS_UPDATE_INHIBITED=1
+    exec systemd-inhibit --what=sleep:idle --why="JarvOS update" "$0" "$@"
+fi
+
+# --- prelude 3: one update at a time -------------------------------------
+# The FD is carried through the environment and verified by what it points
+# at, so there is no PID file to go stale.
+if [[ -z "${JARVOS_UPDATE_LOCK_FD:-}" ]] ||
+    [[ "$(readlink -f "/proc/$$/fd/${JARVOS_UPDATE_LOCK_FD}" 2>/dev/null)" != "$(readlink -f "$LOCK_FILE" 2>/dev/null)" ]]; then
+    exec 9>"$LOCK_FILE"
+    export JARVOS_UPDATE_LOCK_FD=9
+    flock 9
+fi
+
+ASSUME_YES=""
+case "${1-}" in
+-y | --yes) ASSUME_YES=1 ;;
+-h | --help)
+    sed -n '2,8p' "$0"
+    exit 0
+    ;;
+"") ;;
+*) die "unknown argument: $1" ;;
+esac
+if [[ -n "$ASSUME_YES" ]]; then export JARVOS_ASSUME_YES=1; fi
+
+on_error() {
+    printf '\njarvos-update failed. The full transcript is at %s\n' "$TRANSCRIPT" >&2
+    printf 'Re-run jarvos-update to resume, or reboot into a snapshot to roll back.\n' >&2
+}
+trap on_error ERR
+
+printf 'JarvOS %s\n' "$(jarvos-version 2>/dev/null || echo unknown)"
+
+# --- gate: space, before the confirm prompt, so a doomed run says so early
+free_gib="$(df --output=avail -BG "$HOME" | tail -1 | tr -dc '0-9')"
+if [[ -n "$free_gib" ]] && ((free_gib < MIN_FREE_GIB)); then
+    die "not enough free space: ${free_gib}G available, an update needs ${MIN_FREE_GIB}G"
+fi
+
+if [[ -z "$ASSUME_YES" ]]; then
+    read -r -p "Update JarvOS now? [Y/n] " reply
+    [[ -z "$reply" || "$reply" == [yY]* ]] || exit 0
+fi
+
+# --- prune, then snapshot ------------------------------------------------
+sudo pacman -Sc --noconfirm >/dev/null 2>&1 || true
+
+if command -v snapper >/dev/null 2>&1; then
+    sudo snapper create --description "before jarvos-update" >/dev/null 2>&1 ||
+        echo "jarvos-update: could not create a snapshot — continuing without a rollback point" >&2
+fi
+
+# --- the pipeline --------------------------------------------------------
+jarvos-update-git
+jarvos-update-keyring
+jarvos-update-system-pkgs
+jarvos-migrate
+jarvos-hook post-update
+jarvos-update-aur-pkgs
+jarvos-update-orphan-pkgs
+jarvos-update-analyze-logs
+jarvos-update-restart
+
+trap - ERR
+printf '\nJarvOS is up to date (%s)\n' "$(jarvos-version 2>/dev/null || echo unknown)"
