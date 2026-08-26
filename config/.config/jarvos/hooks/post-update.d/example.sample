@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Rename this file without the .sample suffix (and chmod +x it) to activate.
+#
+# Runs after every successful jarvos-update. $1 is the event name.
+# A non-zero exit is reported and ignored — a hook cannot break an update.
+
+echo "post-update hook ran at $(date)"

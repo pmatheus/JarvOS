@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Rename without .sample (and chmod +x) to activate.
+#
+# Runs after JarvOS swaps pacman.conf and mirrorlist, before the upgrade.
+# This is where you re-inject your own repositories, since the swap replaces
+# those files wholesale rather than editing them in place.
+
+echo "pre-refresh-pacman hook ran"
