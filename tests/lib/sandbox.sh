@@ -209,6 +209,11 @@ case "$*" in
                      printf '%s %s\n' "$p" "$(cat "$FAKE_STATE/pacman-version-$p")"
              done
              exit 0 ;;
+    -Syu*)   # A full upgrade names no packages, so it must not fall through
+             # to -S*) — that branch ends on a grep that finds nothing and
+             # exits 1 when every argument is a flag.
+             printf '%s\n' "$*" >> "$FAKE_STATE/pacman-syu-calls"
+             exit 0 ;;
     -S*)     [[ -e "$FAKE_STATE/pacman-lies" ]] && exit 0
              printf '%s\n' "${@:2}" | grep -v '^--' >> "$FAKE_STATE/pacman-installed"
              printf '%s\n' "${@:2}" | grep -v '^--' >> "$FAKE_STATE/pacman-explicit" ;;
@@ -277,6 +282,38 @@ EOF
 # Drop sudo's own leading options, then exec the command with ITS options intact.
 while [[ $# -gt 0 && "$1" == -* ]]; do shift; done
 exec "$@"
+EOF
+
+    cat >"$FAKE_BIN/hyprctl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FAKE_STATE/hyprctl-calls"
+EOF
+
+    cat >"$FAKE_BIN/journalctl" <<'EOF'
+#!/usr/bin/env bash
+cat "$FAKE_STATE/journal" 2>/dev/null || true
+EOF
+
+    # A git that records what it was asked and can be told to fail or to
+    # leave the tree conflicted. Opt-in: the roundtrip and version suites
+    # build and interrogate real repositories, so without the flag file this
+    # hands straight over to the real git.
+    cat >"$FAKE_BIN/git" <<'EOF'
+#!/usr/bin/env bash
+if [[ ! -e "$FAKE_STATE/git-shim" ]]; then
+    PATH="${PATH#"$FAKE_BIN":}" exec git "$@"
+fi
+printf '%s\n' "$*" >> "$FAKE_STATE/git-calls"
+case "$*" in
+    *"pull"*)
+        [[ -e "$FAKE_STATE/git-pull-fails" ]] && { echo "fatal: could not resolve host" >&2; exit 128; }
+        [[ -e "$FAKE_STATE/git-pull-conflicts" ]] && { echo "CONFLICT (content)" >&2; exit 1; }
+        exit 0 ;;
+    *"diff --check"*)
+        [[ -e "$FAKE_STATE/git-pull-conflicts" ]] && exit 1
+        exit 0 ;;
+    *) exit 0 ;;
+esac
 EOF
 
     chmod +x "$FAKE_BIN"/*
