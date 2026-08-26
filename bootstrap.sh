@@ -148,6 +148,12 @@ deploy_dotfiles(){
     run mkdir -p "$cfg"
     run cp -rf "$base/config/.config/." "$cfg/"
 
+    # The secret gate ships on, not opt-in: it is off exactly when a new
+    # clone needs it most.
+    if [[ -d "$base/.githooks" ]]; then
+        run git -C "$base" config core.hooksPath .githooks
+    fi
+
     # Every migration this release ships is already true of a fresh install.
     # Without this, migration N would have to be safe on a machine that never
     # had state N-1 — a contract that collapses after about fifty of them.

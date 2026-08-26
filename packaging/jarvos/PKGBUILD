@@ -1,0 +1,50 @@
+# Maintainer: JarvOS
+pkgname=jarvos
+pkgver=0.3.0
+pkgrel=1
+pkgdesc="JarvOS runtime: maintenance commands, migrations, and shipped defaults"
+arch=('any')
+url="https://github.com/jarvos/JarvOS"
+license=('GPL3')
+depends=('bash' 'git' 'pacman' 'util-linux')
+optdepends=(
+    'snapper: rollback point before each update'
+    'yay: AUR package updates'
+    'quickshell-git: the JarvOS shell'
+)
+source=()
+sha256sums=()
+
+package() {
+    local root="$startdir/../.."
+
+    # Commands onto $PATH. Until now none of the runtime tooling was
+    # installed anywhere at all.
+    install -d "$pkgdir/usr/bin"
+    install -Dm755 "$root"/bin/jarvos-* -t "$pkgdir/usr/bin/"
+
+    # The library, at the path every command's preamble falls back to.
+    install -Dm644 "$root/lib/jarvos-common.sh" \
+        "$pkgdir/usr/share/jarvos/lib/jarvos-common.sh"
+
+    # Migrations ship 0644 and shebang-less: the runner supplies strictness,
+    # and a stray ./ must not be able to fire one.
+    install -d "$pkgdir/usr/share/jarvos/migrations"
+    if compgen -G "$root/migrations/*.sh" >/dev/null; then
+        install -Dm644 "$root"/migrations/*.sh -t "$pkgdir/usr/share/jarvos/migrations/"
+    fi
+
+    # Shipped defaults, the source jarvos-refresh-config pulls from.
+    install -d "$pkgdir/usr/share/jarvos/config"
+    cp -a "$root/config/." "$pkgdir/usr/share/jarvos/config/"
+
+    # The path scripts/jarvos-module-install already searches and which
+    # nothing has populated until now.
+    install -d "$pkgdir/usr/share/jarvos/modules"
+    if [[ -d "$root/system/modules" ]]; then
+        cp -a "$root/system/modules/." "$pkgdir/usr/share/jarvos/modules/"
+    fi
+
+    install -Dm644 "$root/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 "$root/CHANGELOG.md" "$pkgdir/usr/share/doc/$pkgname/CHANGELOG.md"
+}
