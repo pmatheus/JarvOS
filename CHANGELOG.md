@@ -6,6 +6,24 @@ tags the `jarvos` package is built from.
 
 ## [Unreleased]
 
+### Added
+
+- `jarvos-update` — the single blessed way to bring a machine current, with
+  a transcript, a rollback snapshot, and mutual exclusion.
+- `jarvos-refresh-config` — pulls a shipped default over a user file,
+  keeping a backup only when something was actually lost.
+- `jarvos-hook` — user hooks for `post-update`, `post-boot`,
+  `pre-refresh-pacman` and `theme-set`. A failing hook never aborts a run.
+- `jarvos-restart-shell` and marker-driven restart dispatch.
+- A `PKGBUILD`, so the runtime tooling reaches `$PATH` for the first time.
+- A LICENSE: GPL-3.0-only, inherited from the Caelestia fork the shell
+  derives from.
+
+### Changed
+
+- The pre-commit secret gate installs itself from `bootstrap.sh` instead of
+  waiting to be opted into.
+
 ## [0.3.0] — 2026-08-25
 
 The first release boundary. Before this tag there were no releases to
