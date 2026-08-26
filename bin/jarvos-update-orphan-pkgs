@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# jarvos-update-orphan-pkgs — list packages nothing depends on any more.
+#
+# Never removes without a human. An orphan list is a heuristic, and removing
+# from it unattended is how an update eats something the user installed on
+# purpose. Under -y this step reports and skips; it does not become a force.
+#
+# Seams: JARVOS_ASSUME_YES
+
+set -uo pipefail
+
+# shellcheck source=lib/jarvos-common.sh
+_lib="$(dirname "$(realpath "$0")")/../lib/jarvos-common.sh"
+if [[ -r "$_lib" ]]; then source "$_lib"; else source /usr/share/jarvos/lib/jarvos-common.sh; fi
+unset _lib
+
+orphans="$(pacman -Qtdq 2>/dev/null || true)"
+[[ -n "$orphans" ]] || exit 0
+
+echo "These packages are no longer required by anything:"
+printf '%s\n' "$orphans" | sed 's/^/  /'
+
+if [[ -n "${JARVOS_ASSUME_YES:-}" ]]; then
+    echo "Run 'jarvos-update-orphan-pkgs' interactively to remove them."
+    exit 0
+fi
+
+read -r -p "Remove them? [y/N] " reply
+[[ "$reply" == [yY]* ]] || exit 0
+
+# shellcheck disable=SC2086  # deliberate word splitting: one package per line
+sudo pacman -Rns --noconfirm $orphans
+exit 0

@@ -203,6 +203,8 @@ case "$*" in
     "-Qqe")  cat "$FAKE_STATE/pacman-explicit" ;;
     "-Qq")   cat "$FAKE_STATE/pacman-explicit" ;;
     "-Qqm")  cat "$FAKE_STATE/pacman-foreign" ;;
+    # Above -Q*), which would otherwise swallow it and report no orphans.
+    "-Qtdq") cat "$FAKE_STATE/pacman-orphans" 2>/dev/null || true ;;
     -Q*)     for p in "${@:2}"; do
                  grep -qxF "$p" "$FAKE_STATE/pacman-explicit" || exit 1
                  [[ -e "$FAKE_STATE/pacman-version-$p" ]] &&
@@ -248,6 +250,10 @@ case "${1:-}" in
                      done ;;
     is-enabled)      grep -qxF "${2:-}" "$FAKE_STATE/units-$scope" 2>/dev/null || { echo disabled; exit 1; }
                      echo enabled ;;
+    restart)         for u in "${@:2}"; do
+                         [[ "$u" == --* ]] && continue
+                         printf '%s\n' "$u" >> "$FAKE_STATE/units-restarted"
+                     done ;;
     *)               exit 0 ;;
 esac
 EOF
@@ -385,7 +391,7 @@ run_cmd() {
     set +e
     out="$(env \
         HOME="$FAKE_HOME" \
-        PATH="$FAKE_BIN:$PATH" \
+        PATH="$FAKE_BIN:$REPO_ROOT/bin:$PATH" \
         XDG_STATE_HOME="$FAKE_HOME/.local/state" \
         FAKE_STATE="$FAKE_STATE" \
         JARVOS_PATH="${JARVOS_PATH:-$FAKE_BASE}" \

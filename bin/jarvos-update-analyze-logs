@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# jarvos-update-analyze-logs — what this boot has been complaining about.
+#
+# Informational and never fatal: it runs at the end of an update so a user
+# sees a problem the update caused while they still connect the two.
+
+set -uo pipefail
+
+# shellcheck source=lib/jarvos-common.sh
+_lib="$(dirname "$(realpath "$0")")/../lib/jarvos-common.sh"
+if [[ -r "$_lib" ]]; then source "$_lib"; else source /usr/share/jarvos/lib/jarvos-common.sh; fi
+unset _lib
+
+errors="$(journalctl -p 3 -b --no-pager 2>/dev/null | tail -n 20 || true)"
+[[ -n "$errors" ]] || exit 0
+
+echo "Errors logged this boot (informational):"
+printf '%s\n' "$errors" | sed 's/^/  /'
+exit 0

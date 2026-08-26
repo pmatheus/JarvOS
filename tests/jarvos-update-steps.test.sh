@@ -69,4 +69,75 @@ start_test "the system upgrade runs -Syu"
 run_cmd jarvos-update-system-pkgs
 assert_status "$RUN_STATUS" 0 && pass_test
 
+# --- jarvos-update-aur-pkgs ---------------------------------------------
+
+start_test "an AUR failure is reported but never fatal"
+cat >"$FAKE_BIN/yay" <<'YAY'
+#!/usr/bin/env bash
+echo "error: failed to build foo" >&2
+exit 1
+YAY
+chmod +x "$FAKE_BIN/yay"
+run_cmd jarvos-update-aur-pkgs
+assert_status "$RUN_STATUS" 0 &&
+    assert_stdout_contains "$RUN_OUT" "AUR" &&
+    pass_test
+
+# --- jarvos-update-orphan-pkgs ------------------------------------------
+
+start_test "orphans are never removed without a human"
+printf 'orphan-one\norphan-two\n' >"$FAKE_STATE/pacman-orphans"
+: >"$FAKE_STATE/pacman-removed"
+JARVOS_ASSUME_YES=1 run_cmd jarvos-update-orphan-pkgs
+assert_status "$RUN_STATUS" 0 &&
+    { [[ ! -s "$FAKE_STATE/pacman-removed" ]] || fail_test "removed orphans unattended"; } &&
+    assert_stdout_contains "$RUN_OUT" "orphan-one" &&
+    pass_test
+
+start_test "no orphans is quiet and exits 0"
+: >"$FAKE_STATE/pacman-orphans"
+JARVOS_ASSUME_YES=1 run_cmd jarvos-update-orphan-pkgs
+assert_status "$RUN_STATUS" 0 && pass_test
+
+# --- jarvos-update-analyze-logs -----------------------------------------
+
+start_test "log analysis reports errors and is never fatal"
+printf 'kernel: something went wrong\n' >"$FAKE_STATE/journal"
+run_cmd jarvos-update-analyze-logs
+assert_status "$RUN_STATUS" 0 &&
+    assert_stdout_contains "$RUN_OUT" "something went wrong" &&
+    pass_test
+
+start_test "a clean journal is quiet"
+: >"$FAKE_STATE/journal"
+run_cmd jarvos-update-analyze-logs
+assert_status "$RUN_STATUS" 0 && pass_test
+
+# --- jarvos-update-restart ----------------------------------------------
+
+start_test "no markers means nothing restarts"
+: >"$FAKE_STATE/units-restarted"
+run_cmd jarvos-update-restart
+assert_status "$RUN_STATUS" 0 &&
+    { [[ ! -s "$FAKE_STATE/units-restarted" ]] || fail_test "restarted something unasked"; } &&
+    pass_test
+
+start_test "a restart marker dispatches to jarvos-restart-<service>"
+run_cmd jarvos-state set restart-shell-required
+run_cmd jarvos-update-restart
+assert_status "$RUN_STATUS" 0 &&
+    assert_contains "$FAKE_STATE/units-restarted" "quickshell-jarvos.service" &&
+    pass_test
+
+start_test "and the marker is cleared, so it does not restart forever"
+assert_no_file "$FAKE_HOME/.local/state/jarvos/restart-shell-required" && pass_test
+
+start_test "a marker with no matching restart command is reported, not fatal"
+run_cmd jarvos-state set restart-nonexistent-required
+run_cmd jarvos-update-restart
+assert_status "$RUN_STATUS" 0 &&
+    assert_stdout_contains "$RUN_OUT" "nonexistent" &&
+    pass_test
+run_cmd jarvos-state clear restart-nonexistent-required
+
 summary "jarvos-update-steps"

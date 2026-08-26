@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# jarvos-restart-shell — restart the JarvOS shell.
+#
+# The unit self-relaunches on crash, so this is a plain restart of the user
+# service rather than anything cleverer.
+
+set -euo pipefail
+
+systemctl --user restart quickshell-jarvos.service
