@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Rename without .sample (and chmod +x) to activate.
+# Runs once per boot, after the shell is up. $1 is the event name.
+
+echo "post-boot hook ran"

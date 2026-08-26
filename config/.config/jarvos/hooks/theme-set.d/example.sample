@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Rename without .sample (and chmod +x) to activate.
+# Runs after the colour scheme changes. $1 is the event name.
+
+echo "theme-set hook ran"
