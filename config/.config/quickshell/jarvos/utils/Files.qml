@@ -9,6 +9,12 @@ import "files.js" as F
 Singleton {
     id: root
 
+    // Two components grabbing to one path race: saving truncates the file
+    // before writing it, so whatever reads in the gap gets nothing. Anything
+    // that grabs repeatedly takes a number from here once, and deletes the file
+    // it named when it goes away.
+    property int scratchCount: 0
+
     function toLocalFile(path: var): string {
         return F.toLocalFile(path);
     }

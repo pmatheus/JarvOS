@@ -3,10 +3,10 @@ pragma ComponentBehavior: Bound
 
 import qs.config
 import qs.utils
-import Caelestia
 import Quickshell
 import Quickshell.Io
 import QtQuick
+import "../utils/colour.js" as Colour
 
 Singleton {
     id: root
@@ -22,7 +22,7 @@ Singleton {
     readonly property M3Palette current: M3Palette {}
     readonly property M3Palette preview: M3Palette {}
     readonly property Transparency transparency: Transparency {}
-    readonly property alias wallLuminance: analyser.luminance
+    readonly property real wallLuminance: Colour.meanLuminance(analyser.colors)
 
     function getLuminance(c: color): real {
         if (c.r == 0 && c.g == 0 && c.b == 0)
@@ -85,10 +85,21 @@ Singleton {
         onLoaded: root.load(text(), false)
     }
 
-    ImageAnalyser {
+    // Wallpapers.current is a bare path; ColorQuantizer reads a URL and returns
+    // nothing at all for one without a scheme.
+    //
+    // depth 8 was picked by measuring both implementations over 26 wallpapers:
+    // the mean error against the plugin is 0.0036 and the worst 0.0094, and
+    // depths 10 and 12 do not improve on it. What is left is not quantisation
+    // but resampling — the plugin scaled with nearest neighbour and this scales
+    // bilinearly, which averages neighbours and so reads fractionally darker.
+    // rescaleSize matches the plugin's default.
+    ColorQuantizer {
         id: analyser
 
-        source: Wallpapers.current
+        source: Files.urlForPath(Wallpapers.current)
+        depth: 8
+        rescaleSize: 128
     }
 
     component Transparency: QtObject {
