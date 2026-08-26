@@ -541,7 +541,11 @@ Expected: `Colour` suite green.
 
 - [ ] **Step 5: Replace the URL-source site**
 
-In `services/Colours.qml`, swap `ImageAnalyser { source: ... }` for `ColorQuantizer { source: ...; depth: ... }` and derive `luminance` from its `colors` via `colour.js`. Pick `depth` by comparing the resulting `wallLuminance` against the current build on several wallpapers — this value feeds light/dark decisions shell-wide, so a shift here is visible everywhere.
+In `services/Colours.qml`, swap `ImageAnalyser { source: ... }` for `ColorQuantizer { source: ...; depth: ... }` and derive `luminance` from its `colors` via `colour.js`. Pick `depth` by comparing the resulting `wallLuminance` against the current build on several wallpapers.
+
+**Correction, made during implementation:** an earlier draft of this step claimed `wallLuminance` feeds light/dark decisions shell-wide. It does not. Light/dark comes from the `mode` in `scheme.json`; `wallLuminance` has exactly one consumer, the transparency offset in `alterColour` at `services/Colours.qml:36`. The value still needs to match, but a shift in it changes layer transparency, not the shell's mode.
+
+The plugin's formula — read off its source, not inferred — is `sqrt(0.299r² + 0.587g² + 0.114b²)` averaged over every opaque pixel, which is the same expression as this file's own `getLuminance` and **not** the Rec. 709 average suggested in Step 3 below. Reproduce the existing one.
 
 - [ ] **Step 6: Replace the Item-source site**
 
