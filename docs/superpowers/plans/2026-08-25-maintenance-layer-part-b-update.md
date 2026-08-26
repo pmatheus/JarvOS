@@ -1656,8 +1656,22 @@ check "the module path jarvos-module-install searches is populated" \
 check "the hook sample directories shipped" \
     '[[ -d ~/.config/jarvos/hooks/post-update.d ]]'
 
-check "jarvos-update refuses cleanly with no network" \
-    '! ( sudo ip link set dev eth0 down 2>/dev/null; jarvos-update -y ); sudo ip link set dev eth0 up 2>/dev/null; true'
+# CORRECTED 2026-08-26. The original form of this check was vacuous: its eval
+# ended in `; true`, so its exit status was always 0 and it passed regardless
+# of what jarvos-update did. It also hardcoded eth0, which a QEMU guest under
+# predictable naming does not have — and `2>/dev/null` hid that failure, so
+# the network stayed up and the check silently became "jarvos-update runs".
+#
+# Discover the interface, capture the status BEFORE restoring the link, and
+# assert on the captured status.
+check "jarvos-update refuses cleanly with no network" '
+    iface="$(ip route show default | awk "{print \$5; exit}")"
+    [[ -n "$iface" ]] || { echo "    no default route to take down"; false; }
+    sudo ip link set dev "$iface" down || { echo "    could not down $iface"; false; }
+    jarvos-update -y >/dev/null 2>&1
+    rc=$?
+    sudo ip link set dev "$iface" up
+    [[ "$rc" -ne 0 ]]'
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [[ "$fail" -eq 0 ]]

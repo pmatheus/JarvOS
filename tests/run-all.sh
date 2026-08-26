@@ -20,7 +20,8 @@ tests/qml/run.sh || fail=1
 
 # The two jarvos-sync suites predate this gate and carry findings of their own;
 # every other suite is in scope, including ones added later.
-lint=(bin/jarvos-* lib/*.sh tests/run-all.sh tests/lib/*.sh tests/qml/run.sh)
+lint=(bin/jarvos-* lib/*.sh tests/run-all.sh tests/lib/*.sh tests/qml/run.sh
+    tests/vm/verify-fresh-install.sh)
 for t in tests/*.test.sh; do
     [[ "$t" == *jarvos-sync-* ]] || lint+=("$t")
 done
