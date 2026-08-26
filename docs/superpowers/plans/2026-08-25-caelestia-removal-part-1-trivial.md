@@ -586,7 +586,22 @@ across the whole shell, and a plain average would make greens read dark."
 - The shell launches, `qs log -c caelestia -r '*=true'` shows no new QML errors, and every surface listed in the verification steps works.
 - `caelestia-shell` is still installed and the `caelestia` name is untouched everywhere.
 
-## Findings to act on separately
+## Findings — both decided 2026-08-26, closed
+
+**Nominatim: leave it.** Chairman decided not to fix. BigDataCloud has answered
+all along and nothing is missing today; changing which service names the
+location buys no capability. The evidence stays recorded below so nobody
+re-derives the same 403 from scratch, but the code is deliberately untouched.
+
+**The two manual checks: accepted unverified.** Chairman decided the
+measurements taken during implementation are sufficient — the crop through a
+clipping wrapper, and luminance validated across 26 wallpapers with worst-case
+error 0.0094. Neither the rendered screenshot nor the rendered transparency was
+ever exercised by a human, and that is a known, accepted gap rather than an
+oversight. If either later looks wrong, Task 3 and Task 6 respectively are
+where to look first.
+
+## Findings, retained as evidence
 
 **Nominatim reverse-geocoding has always been failing.** Discovered during
 Task 4 and confirmed independently: `nominatim.openstreetmap.org` returns 403
