@@ -1604,7 +1604,35 @@ a fresh clone needs it most."
 
 ---
 
-## Task 13: Clean-VM verification
+## Task 13: Clean-VM verification — SCRIPT DONE, RUN DEFERRED
+
+**Status as of 2026-08-26: the VM run has not happened.** Chairman decided to
+close Part B with this verification explicitly outstanding rather than hold the
+whole part open for it.
+
+What exists: `tests/vm/verify-fresh-install.sh`, committed, shellcheck-clean,
+and wired into `tests/run-all.sh`'s lint list. Its no-network check was found
+vacuous during review and corrected — see the note inline below.
+
+What does not exist: any ISO carrying the `jarvos` package, any fresh VM, any
+run of the script. A first attempt spent several hours and produced neither an
+ISO nor a repo entry, and did not report what blocked it; the likeliest
+candidate is the GPG passphrase that `jarvos-repo-build` needs for signing,
+which is deliberately not something an agent should work around.
+
+**Therefore the three criteria this task exists to prove remain unproven:** that
+a fresh install pre-marks every migration and migrates nothing on first boot,
+that the packaged library is where each command's fallback looks, and that an
+update with no network fails cleanly. Every one of them concerns the path a new
+user takes, which nothing else in this repository tests.
+
+To finish it later: clear the signing blocker, get
+`packaging/jarvos/jarvos-0.3.0-1-any.pkg.tar.zst` into `~/jarvos-iso`'s repo,
+build an ISO, and run `~/jarvos-iso/bin/jarvos-iso-test`. Do it on a quiet
+machine — the box carried a DFIR workload and three QEMU VMs throughout this
+work.
+
+## Task 13 (original text): Clean-VM verification
 
 Three of the spec's criteria cannot be proven in a sandbox, only in a machine that has never seen JarvOS. `~/jarvos-iso` already has QEMU tooling (`bin/jarvos-iso-test`) to build on.
 
@@ -1711,8 +1739,8 @@ Against spec §11:
 
 | # | Criterion | Proven by |
 |---|---|---|
-| 1 | `jarvos-version` from `pacman -Q` when packaged, `dev (<hash>)` in a checkout | Part A Task 5; VM check 1 |
-| 2 | Fresh install pre-marks everything; first boot runs zero migrations | Part A Task 4 + VM checks 2–3 |
+| 1 | `jarvos-version` from `pacman -Q` when packaged, `dev (<hash>)` in a checkout | Part A Task 5; VM check 1 **NOT RUN** (verified in a checkout only) |
+| 2 | Fresh install pre-marks everything; first boot runs zero migrations | Part A Task 4 (sandboxed). **VM checks 2–3 NOT RUN** |
 | 3 | A failed migration leaves no marker, aborts, retries | Part A Task 3 |
 | 4 | Deleting one marker replays exactly that migration | Part A Task 3 |
 | 5 | Two concurrent `jarvos-update` runs never interleave | Task 11 |
@@ -1722,7 +1750,7 @@ Against spec §11:
 | 9 | Shell loads from `/etc/xdg/quickshell/jarvos/` | **Out of scope** — spec §12 step 6 |
 | 10 | `shell.json` survives an update byte-identical | **Out of scope** — depends on 9 |
 | 11 | A manifest package plus its migration lands after one update | Task 11 + a real migration |
-| 12 | No network: fails cleanly, leaves the system usable | Task 9 + VM check 8 |
+| 12 | No network: fails cleanly, leaves the system usable | Task 9 (sandboxed). **VM check 8 NOT RUN** |
 | 13 | `shellcheck` passes on every new script | `tests/run-all.sh` |
 
 Criteria 9 and 10 belong to spec §12 step 6 (shell relocation), which is not in Parts A or B.
