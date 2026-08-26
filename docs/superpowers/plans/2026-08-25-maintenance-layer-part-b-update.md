@@ -42,7 +42,7 @@ Everything in Part A's Global Constraints still applies, plus:
 | `bin/jarvos-restart-shell` | Restart `quickshell-jarvos.service`. The first restart target. |
 | `bin/jarvos-update` | Orchestration only. |
 | `packaging/jarvos/PKGBUILD` | Builds the runtime package. |
-| `LICENSE` | Absent today; required to distribute. |
+| `LICENSE` | **Already present** — GPLv3, added 2026-08-25 ahead of publishing. Task 12 verifies it rather than creating it. |
 | `tests/jarvos-refresh-config.test.sh`, `tests/jarvos-hook.test.sh`, `tests/jarvos-update-steps.test.sh`, `tests/jarvos-update.test.sh` | One suite per task. |
 | `tests/vm/verify-fresh-install.sh` | The clean-VM checks that cannot be faked. |
 
@@ -1415,7 +1415,15 @@ Run: `chmod +x tests/jarvos-package.test.sh && tests/jarvos-package.test.sh`
 
 Expected: every case FAILs.
 
-- [ ] **Step 3: Write the LICENSE — GPL-3.0-only, decided, do not revisit**
+- [ ] **Step 3: LICENSE — already done, verify only**
+
+**This step was completed ahead of schedule on 2026-08-25** and pulled out of this task, because the repository was published to GitHub before Part B ran and distributing GPL-derived work without the licence text is the one thing the licence actually requires.
+
+`LICENSE` already holds the full 674-line GPLv3 text, and `README.md`'s License section already carries the attribution described in Step 4. **Verify both and move on — do not rewrite them.**
+
+Run: `head -3 LICENSE && wc -l LICENSE && sed -n '/^## License/,/^$/p' README.md`
+
+Expected: `GNU GENERAL PUBLIC LICENSE`, 674 lines, and a README section naming GPL-3.0-only and the Caelestia derivation. If either is missing, restore it as the original step below describes.
 
 **The license is GPL-3.0-only for the whole repository.** This is settled; do not substitute MIT because `~/jarvos-iso` uses it.
 
