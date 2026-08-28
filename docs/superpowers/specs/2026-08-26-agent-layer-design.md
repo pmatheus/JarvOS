@@ -1,169 +1,180 @@
 # The JarvOS agent layer
 
-**Date:** 2026-08-26
+**Date:** 2026-08-26 (revised 2026-08-28)
 **Status:** design approved, ready for an implementation plan
 **Source:** omarchy's agent tooling (`basecamp/omarchy`, branch `quattro`), adapted
 
 ## Sumário Executivo
 
 JarvOS already lets agents *drive* the desktop through `hypr-box`, and
-`ai.module` installs four coding agents plus a local model runtime. What it has
-no layer for is *managing* those agents: which one is yours, how much quota is
-left, and what to do when something fails.
+`ai.module` installs the coding agents. What it has no layer for is *managing*
+those agents: which are running, what each is working on, how much quota each
+has left, and what to do when something fails.
 
-omarchy solves exactly that half and solves nothing of the half JarvOS already
-has. The two are complementary, so this adopts omarchy's agent-management layer
-without touching `hypr-box`.
+omarchy solves the single-agent half of that. **JarvOS is used multi-agent** —
+four agents, several running at once — so this adapts omarchy's ideas rather
+than porting them, and replaces its single-default model with session tracking.
 
 ## Goal
 
-One switchable default agent, visible quota, a prompt that starts work rather
-than opening a tool, and any failure — a crash, a failed update, a failed
-migration — offerable to that agent with the facts already gathered.
+At any moment, see which agents are running and what each is on; see remaining
+quota per agent; start a new one from a picker that shows both; and hand any
+failure to an agent with the facts already gathered.
 
-**Constraint, and the reason this design is shaped as it is:** the existing
-keymap has 108 bindings and the setup is in daily use. Nothing here may break a
-shortcut or a workflow that works today.
+## Revision note — what changed and why
 
-## What exists to build on
+The first draft was built on two wrong premises: that `Super+A` had to keep
+launching Claude Desktop, and that a **single default agent** was the right
+model. The chairman corrected both on 2026-08-28 — `Super+A` is unused, and the
+working style is four agents concurrently: `agy`, `codex`, `claude`, `opencode`.
 
-| Piece | Where | Relevance |
+Consequences: omarchy's `default-agent` abstraction is dropped entirely, usage
+tracking moves from a side feature to the centre, and the bar surface becomes a
+live multi-agent status rather than a quota chip.
+
+## The four agents
+
+| Name | Command | Notes |
 |---|---|---|
-| `hypr-box` | uv tool, 40+ subcommands | Agents controlling the desktop. **Untouched by this work.** |
-| Installed agents | `system/modules/ai.module` | claude-code, opencode, openai-codex, antigravity, ollama, claude-desktop |
-| `Super+A` | `keybinds.conf` | Hardcoded to `claude-desktop-native`. Repointed here. |
-| `jarvos-update`'s `ERR` trap | `bin/jarvos-update:81` | Already prints where the transcript is. The handoff hooks in here. |
-| `~/.config/jarvos/hooks/` | shipped | Establishes `~/.config/jarvos/` as the user surface. `defaults/` and `agents/` are siblings. |
-| Topbar chips | `modules/bar/` | Tailscale and network chips are the working pattern for a usage chip. |
+| `claude` | `/usr/bin/claude` | Claude Code |
+| `codex` | `~/.bun/bin/codex` | |
+| `opencode` | `/usr/bin/opencode` | |
+| `agy` | `/usr/bin/antigravity` | **`agy` is an alias, not a binary.** Accept it as the name; resolve to `antigravity`. |
 
-## The five pieces
+All four are installed by `system/modules/ai.module`. `claude-desktop` and
+`ollama` are installed too but are not agents in this sense — the GUI app and a
+model runtime respectively.
 
-### 1. Default-agent abstraction
+## Why session tracking cannot be process detection
 
-`jarvos-default-agent [<name>]` prints the current choice, or sets it. Stored at
-`~/.config/jarvos/defaults/agent`.
+The obvious approach — `pgrep` for agent names — does not work here, and this
+was verified rather than assumed. On this machine `pgrep -af claude` matches:
 
-Supported names map to what `ai.module` actually installs — `claude`,
-`opencode`, `codex`, `antigravity` — plus `claude-desktop` for the GUI. **Ship
-with `claude-desktop` as the default**, because that is what `Super+A` does
-today and the muscle memory must survive the change.
+- the user's own Claude Code session (correct)
+- a `dfirmon` binary living under `~/.claude/skills/...` (a false positive from
+  the path)
+- transient shell wrappers containing the word in their command line
 
-Unlike omarchy, which deliberately ships no default and makes you choose, JarvOS
-has an existing behaviour to preserve. Preserving it is the point.
+A layer that reports a DFIR monitor as a running agent is worse than no layer.
+**Sessions are therefore recorded by the launcher**, not inferred.
 
-### 2. `jarvos-agent` — the launcher
+## Architecture
 
-`jarvos-agent [--pick] [--prompt TEXT]` launches the default agent. GUI agents
-are launched directly; CLI agents open in a terminal.
+### Session records
 
-`Super+A` is repointed from `claude-desktop-native ...` to `jarvos-agent`.
-With the default set to `claude-desktop`, the key does exactly what it does
-today — and gains a switch.
+`jarvos-agent` writes a record when it starts an agent:
 
-Borrowed from omarchy, because the reason is real: agents refuse to remember
-trust for `$HOME`, so a launch from a keybinding starts in a work directory
-rather than re-prompting every session. JarvOS's equivalent is `~/JarvOS` or
-the user's configured work path, not omarchy's hardcoded `~/Work`.
+`$XDG_RUNTIME_DIR/jarvos/agents/<pid>.json` — `{agent, pid, cwd, started, task}`
 
-### 3. `jarvos-agent-prompt` — start work, not a tool
+`XDG_RUNTIME_DIR` is `/run/user/1000`: tmpfs, so records die with the login
+session and no state survives a reboot to go stale.
 
-Takes a prompt and hands it to the default agent via `jarvos-agent --prompt`.
-Reachable from the launcher, so it needs no keybinding of its own.
+**Liveness is derived, never maintained.** A reader checks `/proc/<pid>`; a
+record whose process is gone is stale and is ignored, and may be reaped
+opportunistically. There is no cleanup daemon and no exit trap to miss — an
+agent killed with `SIGKILL`, a crashed terminal and a clean exit all behave
+identically.
 
-### 4. Usage and quota
+`task` is the prompt when one was given, otherwise the working directory. It
+answers "what is this one on?" at a glance.
 
-`jarvos-agent-usage-<provider>` prints one display-ready JSON record per
-provider; a topbar chip reads that JSON and nothing else. omarchy's Claude
-collector reconciles local transcripts under `~/.claude/projects`, a stats
-cache, sessions from other agents that ran on the same provider, and the
-authoritative rate limits from the provider's usage endpoint.
+### The pieces
 
-**Start with Claude and Codex.** Those are the two with real quota pressure, and
-the value is knowing before a long session that it will not survive to the end.
+**`jarvos-agent <name> [--prompt TEXT]`** — launches one of the four in a
+terminal, records the session. Terminal selection reuses the repo's existing
+`launch_first_available.sh` idiom rather than hardcoding one.
 
-The chip is additive and costs no keybinding, which is why it is the piece that
-best fits the constraint.
+**`jarvos-agent-sessions [--json]`** — the live sessions, stale records
+filtered out. The single source the bar reads.
 
-### 5. Failure handoff
+**`jarvos-agent-usage-<provider>`** — one display-ready JSON record per
+provider. omarchy's Claude collector reconciles local transcripts under
+`~/.claude/projects`, a stats cache, sessions from other agents that ran on the
+same provider, and the authoritative rate limits from the provider's usage
+endpoint. Start with `claude` and `codex`, which are the two with real quota
+pressure.
 
-The most valuable piece, and the one JarvOS is best positioned for because the
-failures are already instrumented.
+**`jarvos-agent-pick`** — the picker behind `Super+A`. Lists the four with, for
+each, whether a session is running and what quota remains. Choosing one launches
+it. Quota at the moment of choosing is the point: it is exactly when the
+information is useful.
 
-`jarvos-agent-diagnose <kind> [args]` gathers the facts for a failure and hands
-them to the default agent, pointing at a skill that holds the method:
+**`jarvos-agent-diagnose <kind> [args]`** — gathers a failure's facts and offers
+them to an agent, pointing at a skill that holds the method:
 
-| Kind | Facts gathered | Trigger |
+| Kind | Facts | Trigger |
 |---|---|---|
-| `crash` | `coredumpctl` record: process, PID, binary, signal, time | The "Process crashed" notification, or by hand |
-| `update` | `/tmp/jarvos-update.log`, the failing step, `jarvos-version` | `jarvos-update`'s `ERR` trap offers it |
-| `migration` | The migration filename, its output, which marker is absent | `jarvos-migrate` on abort |
-| `shell` | `qs log -c caelestia` tail, the QML error | A repeated shell crash |
+| `update` | `/tmp/jarvos-update.log`, failing step, `jarvos-version` | `jarvos-update`'s `ERR` trap |
+| `crash` | `coredumpctl` record: process, PID, binary, signal, time | The crash notification, or by hand |
+| `migration` | Migration filename, its output, which marker is absent | `jarvos-migrate` on abort |
+| `shell` | Bounded tail of `qs log -c caelestia` | A repeated shell crash |
 
 **The method lives in the skill, not the script.** Each script gathers facts and
-points at `~/.config/jarvos/agents/skills/<name>/SKILL.md`. That way the
-approach is edited in one place, works with whichever agent is default, and a
-harness with no skill mechanism can be told to read the file directly.
+points at `~/.config/jarvos/agents/skills/diagnose-failure/SKILL.md`, so the
+approach is edited once and works with whichever agent you hand it to. A harness
+with no skill mechanism is told to read the file directly. This is the first
+skill JarvOS ships.
 
-This is the first skill JarvOS ships. `config/.config/jarvos/agents/skills/`
-is the home, mirroring the `hooks/` convention already established.
+**Bar surface** — reads `jarvos-agent-sessions` and the usage records. Shows
+running agents and remaining quota. Additive; costs no keybinding.
 
-**Offer, never act.** A failure handoff proposes; it does not run an agent
-unattended against a broken machine. `jarvos-update`'s trap prints the command
-rather than executing it.
+**Command metadata** — omarchy's self-describing headers
+(`# jarvos:summary=`, `args`, `examples`) across `bin/jarvos-*`. Nothing consumes
+it on day one; it is what lets a menu or cheatsheet be generated later rather
+than hand-maintained, and retrofitting 19 commands is cheaper than 40.
 
-### 6. Command metadata
+## Keybinding
 
-Adopt omarchy's self-describing header convention across `bin/jarvos-*`:
+`Super+A` → `jarvos-agent-pick`. One binding, not four: the keymap is 108 deep
+and a picker scales to four agents without consuming four chords.
 
-```bash
-# jarvos:summary=Apply the one-time repair scripts a release ships
-# jarvos:args=[--pending] [--mark-all] [--adopt]
-# jarvos:examples=jarvos-migrate --pending
-```
-
-Nothing consumes it on day one. It is what lets a menu, a cheatsheet, or an
-agent-facing command index be generated later rather than hand-maintained — and
-retrofitting 19 commands is cheaper now than after there are 40.
+`Super+A` is currently bound to `claude-desktop-native`. The chairman does not
+use it, so repointing is free — but the old binding is **removed, not kept
+alongside**, since leaving a dead alternative is how a keymap rots.
 
 ## What this does NOT do
 
-- **No change to `hypr-box`.** Agents driving the desktop is JarvOS's own layer
-  and is out of scope.
-- **No new keybindings.** `Super+A` is repointed, nothing is added. The keymap
-  is 108 bindings deep and every addition is a future collision.
-- **No unattended agent execution.** Every handoff is an offer.
-- **No secrets in prompts.** Usage collectors read provider auth to query quota
-  endpoints; they must never print a token, and a generated prompt must never
-  embed one. The `vault-working` skill applies to anything touching provider
-  credentials.
+- **No change to `hypr-box`.** Agents driving the desktop is a separate layer.
+- **No default agent.** Rejected as the wrong model for concurrent use.
+- **No routing.** Choosing for the user needs a policy worth trusting; a wrong
+  pick is more annoying than choosing yourself. Quota is shown so the human
+  routes.
+- **No unattended agent execution.** Every failure handoff is an offer.
+- **No secrets in prompts or logs.** Usage collectors read provider auth to
+  query quota endpoints; they must never print a token, and a generated prompt
+  must never embed one. An update transcript can contain anything the update
+  printed — treat redaction as a requirement, not a nicety. The `vault-working`
+  skill applies to anything touching provider credentials.
 
-## Sequencing — one real conflict
+## Sequencing
 
-Pieces 1, 2, 3, 5 and 6 are `bin/`, `config/.config/jarvos/` and one line of
-`keybinds.conf`. They do not collide with anything in flight.
+Everything except the bar surface is `bin/`, `config/.config/jarvos/` and one
+line of `keybinds.conf`, and collides with nothing in flight.
 
-**Piece 4's topbar chip touches `config/.config/quickshell/jarvos/modules/bar/`,
-which is where the Caelestia removal Parts 2-3 will work.** Build the collectors
-first — they are ordinary scripts with testable JSON output — and add the chip
-once the removal has settled that tree, or accept the merge cost knowingly.
+**The bar surface touches `config/.config/quickshell/jarvos/modules/bar/`, where
+the Caelestia removal is working.** Build the collectors and
+`jarvos-agent-sessions` first — ordinary scripts with testable JSON output — and
+add the bar surface once that tree settles.
 
 ## Verification
 
-1. `Super+A` with the default unset or set to `claude-desktop` launches Claude
-   Desktop exactly as it does today.
-2. `jarvos-default-agent codex` then `Super+A` opens Codex in a terminal.
-3. `jarvos-agent-usage-claude` prints valid JSON, and prints no token.
-4. A deliberately failed `jarvos-update` offers a diagnose command, and does not
+1. `Super+A` opens the picker listing all four agents.
+2. Launching from the picker starts the agent and it appears in
+   `jarvos-agent-sessions`.
+3. Two agents launched concurrently both appear, each with its own task.
+4. Killing one with `SIGKILL` removes it from the listing without cleanup.
+5. `jarvos-agent-usage-claude` prints valid JSON and prints no token.
+6. A deliberately failed `jarvos-update` offers a diagnose command and does not
    run it.
-5. `jarvos-agent-diagnose crash <pid>` from `coredumpctl list` produces a prompt
-   naming the process, signal and skill path.
-6. Every existing keybinding still resolves — no collisions introduced.
-7. `tests/run-all.sh` passes; new scripts are shellcheck-clean.
+7. No `pgrep`-style false positive: `dfirmon` and the user's own session never
+   appear as launched agents.
+8. Every existing keybinding still resolves.
+9. `tests/run-all.sh` passes; new scripts are shellcheck-clean.
 
 ## Open questions
 
-- Which work directory a keybinding launch should `cd` to.
-- Whether `ollama` belongs in the default-agent list, being a runtime rather
-  than an agent.
-- Whether the usage chip should warn actively at a quota threshold or stay
+- Whether the bar surface should warn actively at a quota threshold or stay
   passive.
+- Whether `jarvos-agent-sessions` should show elapsed time per session.
+- Whether an agent launched outside `jarvos-agent` should be adopted somehow,
+  or simply not tracked.
