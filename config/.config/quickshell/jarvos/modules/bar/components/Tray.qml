@@ -19,17 +19,23 @@ StyledRect {
 
     property bool expanded
 
-    readonly property real nonAnimHeight: {
+    // The bar is horizontal, so the tray grows along x and its height is the
+    // fixed cross-axis — the same way StatusIcons sizes itself. This kept the
+    // vertical form after the horizontal conversion, which pinned the width to
+    // innerWidth (40) while the Row needed 56 for two icons; with clip: true
+    // the second icon rendered as a ~6px slice and, being clipped, could not
+    // be hit-tested either.
+    readonly property real nonAnimWidth: {
         if (!Config.bar.tray.compact)
-            return layout.implicitHeight + padding * 2;
-        return (expanded ? expandIcon.implicitHeight + layout.implicitHeight + spacing : expandIcon.implicitHeight) + padding * 2;
+            return layout.implicitWidth + padding * 2;
+        return (expanded ? expandIcon.implicitWidth + layout.implicitWidth + spacing : expandIcon.implicitWidth) + padding * 2;
     }
 
     clip: true
-    visible: height > 0
+    visible: width > 0
 
-    implicitWidth: Config.bar.sizes.innerWidth
-    implicitHeight: nonAnimHeight
+    implicitWidth: nonAnimWidth
+    implicitHeight: Config.bar.sizes.innerWidth
 
     color: Qt.alpha(Colours.tPalette.m3surfaceContainer, (Config.bar.tray.background && items.count > 0) ? Colours.tPalette.m3surfaceContainer.a : 0)
     radius: Appearance.rounding.full
@@ -112,7 +118,7 @@ StyledRect {
         }
     }
 
-    Behavior on implicitHeight {
+    Behavior on implicitWidth {
         Anim {
             duration: Appearance.anim.durations.expressiveDefaultSpatial
             easing.bezierCurve: Appearance.anim.curves.expressiveDefaultSpatial
