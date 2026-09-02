@@ -132,6 +132,17 @@ Singleton {
     }
 
     function startConnect(name: string): void {
+        const profile = root.profileFor(name);
+        if (profile?.vendor === "globalprotect") {
+            // GlobalProtect's Entra ID flow is owned by GP Connect's embedded
+            // WebKit view. Launching gpclient connect from a QuickShell Process
+            // falls back to the external callback helper and loses its auth
+            // listener before the browser handoff completes.
+            Quickshell.execDetached(["gpclient", "launch-gui"]);
+            root.refresh();
+            return;
+        }
+
         const session = root._addSession(name);
         if (!session)
             return;
@@ -205,10 +216,10 @@ Singleton {
 
             // The profile being connected has appeared: authentication is
             // over, whatever the client still prints.
-            const connecting = root.connectingSessionViews.slice();
-            if (connecting.length > 0) {
-                for (let i = 0; i < connecting.length; i++) {
-                    const profile = connecting[i]?.profile;
+            const sessions = root.sessionViews.slice();
+            if (sessions.length > 0) {
+                for (let i = 0; i < sessions.length; i++) {
+                    const profile = sessions[i]?.profile;
                     if (profile && root.connectedProfiles.includes(profile))
                         root._removeSession(profile);
                 }
@@ -386,8 +397,7 @@ Singleton {
                 conn.signal(15);
         }
 
-        Process {
-            id: commandProc
+        readonly property Process commandProc: Process {
 
             stdout: StdioCollector {
                 onStreamFinished: {
@@ -409,8 +419,7 @@ Singleton {
         // The password goes keyring → this process → the client's stdin.
         // It is held only long enough to be written and never assigned to a
         // property.
-        Process {
-            id: pwProc
+        readonly property Process pwProc: Process {
 
             command: ["secret-tool", "lookup", "service", "jarvos-vpn", "profile", session.profile]
             stdout: StdioCollector {
@@ -439,8 +448,7 @@ Singleton {
             }
         }
 
-        Process {
-            id: conn
+        readonly property Process conn: Process {
 
             stdinEnabled: true
 
