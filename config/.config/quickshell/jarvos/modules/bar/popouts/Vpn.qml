@@ -1,11 +1,11 @@
 pragma ComponentBehavior: Bound
 
 import qs.components
+import qs.components.controls
 import qs.services
 import qs.config
 import Quickshell
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 
 // The VPN menu. Pure view: the connection itself lives in the VpnTunnels
@@ -17,10 +17,55 @@ Item {
     required property Item wrapper
 
     readonly property int contentWidth: 340
-    property bool copied: false
+    property string copiedIp: ""
+
+    readonly property bool loggingIn: VpnTunnels.phase !== ""
+    readonly property bool failed: VpnTunnels.stage === "error"
+    readonly property var available: VpnTunnels.profiles.filter(p => !VpnTunnels.connectedProfiles.includes(p.name))
 
     implicitWidth: contentWidth
     implicitHeight: child.implicitHeight
+
+    function vendorIcon(vendor: string): string {
+        switch (vendor) {
+        case "globalprotect":
+            return "shield";
+        case "fortinet":
+            return "security";
+        case "checkpoint":
+            return "verified_user";
+        default:
+            return "vpn_lock";
+        }
+    }
+
+    function vendorName(vendor: string): string {
+        switch (vendor) {
+        case "globalprotect":
+            return "GlobalProtect";
+        case "fortinet":
+            return "Fortinet";
+        case "anyconnect":
+            return "AnyConnect";
+        case "checkpoint":
+            return "Check Point";
+        default:
+            return vendor ?? "";
+        }
+    }
+
+    function stageText(): string {
+        switch (VpnTunnels.stage) {
+        case "portal":
+            return `Contacting ${VpnTunnels.activeServer}…`;
+        case "prompt":
+            return "Enter your authenticator code";
+        case "tunnel":
+            return "Bringing the tunnel up…";
+        default:
+            return "";
+        }
+    }
 
     Component.onCompleted: VpnTunnels.refresh()
 
@@ -35,8 +80,8 @@ Item {
     Timer {
         id: copiedTimer
 
-        interval: 1200
-        onTriggered: root.copied = false
+        interval: 1500
+        onTriggered: root.copiedIp = ""
     }
 
     ColumnLayout {
@@ -47,6 +92,7 @@ Item {
         anchors.top: parent.top
         spacing: Appearance.spacing.small
 
+        // Header
         RowLayout {
             Layout.fillWidth: true
             spacing: Appearance.spacing.normal
@@ -71,159 +117,245 @@ Item {
                 StyledText {
                     Layout.fillWidth: true
                     text: {
-                        if (VpnTunnels.phase === "prompt")
-                            return `${VpnTunnels.activeProfile} — ${VpnTunnels.promptLabel}`;
-                        if (VpnTunnels.phase === "auth")
-                            return `${VpnTunnels.activeProfile} — authenticating…`;
-                        if (!VpnTunnels.connected)
-                            return "Disconnected";
-                        return VpnTunnels.tunnels.map(t => `${t.profile ?? t.iface} ${t.ip}`).join("  ·  ");
+                        const n = VpnTunnels.tunnels.length;
+                        if (n === 0)
+                            return "Not connected";
+                        return n === 1 ? "1 tunnel up" : `${n} tunnels up`;
                     }
                     color: VpnTunnels.connected ? Colours.palette.m3onSurfaceVariant : Colours.palette.m3error
                     font.pointSize: Appearance.font.size.smaller
-                    elide: Text.ElideRight
                 }
             }
         }
 
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.topMargin: Appearance.spacing.small / 2
-            Layout.bottomMargin: Appearance.spacing.small / 2
-            implicitHeight: 1
-            color: Colours.palette.m3outlineVariant
-            opacity: 0.5
-        }
-
-        // The second factor. Masked, and it never touches a command line: the
-        // value goes straight to the client's stdin.
-        ColumnLayout {
-            Layout.fillWidth: true
-            visible: VpnTunnels.phase === "prompt"
-            spacing: Appearance.spacing.small
-
-            StyledText {
-                Layout.fillWidth: true
-                text: `${VpnTunnels.promptLabel}:`
-                color: Colours.palette.m3onSurfaceVariant
-                font.pointSize: Appearance.font.size.smaller
-            }
-
-            TextField {
-                id: codeField
-
-                Layout.fillWidth: true
-                echoMode: TextInput.Password
-                inputMethodHints: Qt.ImhHiddenText | Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
-                placeholderText: "code"
-                color: Colours.palette.m3onSurface
-                font.family: Appearance.font.family.mono
-
-                background: Rectangle {
-                    color: Colours.palette.m3surfaceContainerHighest
-                    radius: Appearance.rounding.small
-                }
-
-                onVisibleChanged: if (visible)
-                    forceActiveFocus()
-
-                onAccepted: {
-                    VpnTunnels.answer(text);
-                    text = "";
-                }
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: Appearance.spacing.small
-
-                MenuRow {
-                    icon: "send"
-                    label: "Send"
-                    accent: Colours.palette.m3primary
-                    onTriggered: codeField.accepted()
-                }
-
-                MenuRow {
-                    icon: "close"
-                    label: "Cancel"
-                    accent: Colours.palette.m3error
-                    onTriggered: VpnTunnels.cancel()
-                }
-            }
-        }
-
-        // What the client is saying. Without this a rejected code just brings
-        // the prompt back and the user is left guessing why.
-        StyledText {
-            Layout.fillWidth: true
-            visible: VpnTunnels.phase !== "" && VpnTunnels.transcript.length > 0
-            text: VpnTunnels.transcript.replace(/\*+/g, "").trim().split("\n").filter(l => l.trim().length > 0).slice(-3).join("\n")
-            color: Colours.palette.m3onSurfaceVariant
-            font.family: Appearance.font.family.mono
-            font.pointSize: Appearance.font.size.smaller
-            wrapMode: Text.WrapAnywhere
-            opacity: 0.8
-        }
-
-        StyledText {
-            Layout.fillWidth: true
-            visible: VpnTunnels.phase === "auth"
-            text: "Waiting for the portal…"
-            color: Colours.palette.m3onSurfaceVariant
-            font.pointSize: Appearance.font.size.smaller
-        }
-
-        // One block per live tunnel. Disconnect names the profile, because with
-        // two cases up at once "disconnect" alone would have to guess — and the
-        // wrapper refuses to.
-        Repeater {
-            model: VpnTunnels.phase === "" ? VpnTunnels.tunnels : []
+        // Login in progress
+        Card {
+            visible: root.loggingIn
+            tint: Colours.palette.m3surfaceContainerHigh
 
             ColumnLayout {
-                required property var modelData
+                anchors.fill: parent
+                anchors.margins: Appearance.padding.normal
+                spacing: Appearance.spacing.small
 
-                Layout.fillWidth: true
-                spacing: 0
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Appearance.spacing.normal
 
-                MenuRow {
-                    icon: "content_copy"
-                    label: (modelData.profile ?? modelData.iface)
-                    trailing: modelData.ip
-                    onTriggered: {
-                        Quickshell.execDetached(["wl-copy", modelData.ip]);
-                        root.copied = true;
-                        copiedTimer.restart();
+                    CircularIndicator {
+                        Layout.alignment: Qt.AlignVCenter
+                        implicitSize: Appearance.font.size.normal * 1.6
+                        strokeWidth: 2
+                        running: root.loggingIn && VpnTunnels.stage !== "prompt"
+                        visible: running
+                    }
+
+                    MaterialIcon {
+                        Layout.alignment: Qt.AlignVCenter
+                        visible: VpnTunnels.stage === "prompt"
+                        text: "password"
+                        color: Colours.palette.m3primary
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 0
+
+                        StyledText {
+                            text: VpnTunnels.activeProfile
+                            font.bold: true
+                        }
+
+                        StyledText {
+                            Layout.fillWidth: true
+                            text: root.stageText()
+                            color: Colours.palette.m3onSurfaceVariant
+                            font.pointSize: Appearance.font.size.smaller
+                            elide: Text.ElideRight
+                        }
+                    }
+
+                    IconButton {
+                        icon: "close"
+                        type: IconButton.Text
+                        onClicked: VpnTunnels.cancel()
                     }
                 }
 
-                MenuRow {
-                    icon: "link_off"
-                    label: `Disconnect ${modelData.profile ?? modelData.iface}`
-                    accent: Colours.palette.m3error
-                    onTriggered: VpnTunnels.disconnect(modelData.profile ?? "")
+                // The second factor. Masked, and it never touches a command
+                // line: the value goes straight to the client's stdin.
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: VpnTunnels.stage === "prompt"
+                    spacing: Appearance.spacing.small
+
+                    StyledTextField {
+                        id: codeField
+
+                        Layout.fillWidth: true
+                        echoMode: TextInput.Password
+                        inputMethodHints: Qt.ImhHiddenText | Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
+                        placeholderText: `${VpnTunnels.promptLabel}…`
+                        font.family: Appearance.font.family.mono
+
+                        onVisibleChanged: if (visible)
+                            forceActiveFocus()
+
+                        onAccepted: {
+                            VpnTunnels.answer(text);
+                            text = "";
+                        }
+                    }
+
+                    IconButton {
+                        icon: "send"
+                        disabled: codeField.text.length === 0
+                        onClicked: codeField.accepted()
+                    }
                 }
             }
         }
 
+        // Login failed
+        Card {
+            visible: root.failed && !root.loggingIn
+            tint: Colours.palette.m3errorContainer
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.margins: Appearance.padding.normal
+                spacing: Appearance.spacing.normal
+
+                MaterialIcon {
+                    Layout.alignment: Qt.AlignVCenter
+                    text: "error"
+                    color: Colours.palette.m3onErrorContainer
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 0
+
+                    StyledText {
+                        text: `${VpnTunnels.activeProfile} did not connect`
+                        color: Colours.palette.m3onErrorContainer
+                        font.bold: true
+                    }
+
+                    StyledText {
+                        Layout.fillWidth: true
+                        text: VpnTunnels.errorText
+                        color: Colours.palette.m3onErrorContainer
+                        font.pointSize: Appearance.font.size.smaller
+                        wrapMode: Text.WordWrap
+                    }
+                }
+
+                IconButton {
+                    icon: "refresh"
+                    type: IconButton.Text
+                    activeColour: Colours.palette.m3onErrorContainer
+                    onClicked: {
+                        const name = VpnTunnels.activeProfile;
+                        VpnTunnels.dismissError();
+                        VpnTunnels.startConnect(name);
+                    }
+                }
+
+                IconButton {
+                    icon: "close"
+                    type: IconButton.Text
+                    activeColour: Colours.palette.m3onErrorContainer
+                    onClicked: VpnTunnels.dismissError()
+                }
+            }
+        }
+
+        // One card per live tunnel. Disconnect names the profile, because
+        // with two cases up at once "disconnect" alone would have to guess.
+        Repeater {
+            model: VpnTunnels.tunnels
+
+            Card {
+                id: tunnelCard
+
+                required property var modelData
+                readonly property string name: modelData.profile ?? modelData.iface
+                readonly property var profile: VpnTunnels.profileFor(modelData.profile ?? "")
+
+                tint: Colours.palette.m3primaryContainer
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: Appearance.padding.normal
+                    spacing: Appearance.spacing.normal
+
+                    MaterialIcon {
+                        Layout.alignment: Qt.AlignVCenter
+                        text: root.vendorIcon(tunnelCard.profile?.vendor ?? "")
+                        color: Colours.palette.m3onPrimaryContainer
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 0
+
+                        StyledText {
+                            text: tunnelCard.name
+                            color: Colours.palette.m3onPrimaryContainer
+                            font.bold: true
+                        }
+
+                        StyledText {
+                            Layout.fillWidth: true
+                            text: tunnelCard.modelData.ip
+                            color: Colours.palette.m3onPrimaryContainer
+                            font.family: Appearance.font.family.mono
+                            font.pointSize: Appearance.font.size.smaller
+                            elide: Text.ElideRight
+                        }
+                    }
+
+                    IconButton {
+                        icon: root.copiedIp === tunnelCard.modelData.ip ? "check" : "content_copy"
+                        type: IconButton.Text
+                        activeColour: Colours.palette.m3onPrimaryContainer
+                        onClicked: {
+                            Quickshell.execDetached(["wl-copy", tunnelCard.modelData.ip]);
+                            root.copiedIp = tunnelCard.modelData.ip;
+                            copiedTimer.restart();
+                        }
+                    }
+
+                    IconButton {
+                        icon: "link_off"
+                        type: IconButton.Text
+                        activeColour: Colours.palette.m3error
+                        onClicked: VpnTunnels.disconnect(tunnelCard.modelData.profile ?? "")
+                    }
+                }
+            }
+        }
+
+        // Profiles that can still be connected
         StyledText {
             Layout.fillWidth: true
-            Layout.topMargin: Appearance.spacing.small / 2
-            visible: VpnTunnels.phase === "" && VpnTunnels.profiles.some(p => !VpnTunnels.connectedProfiles.includes(p.name))
-            text: VpnTunnels.connected ? "Also connect" : "Connect to"
+            Layout.topMargin: Appearance.spacing.small
+            visible: !root.loggingIn && root.available.length > 0
+            text: VpnTunnels.connected ? "Also connect" : "Connect"
             color: Colours.palette.m3onSurfaceVariant
             font.pointSize: Appearance.font.size.smaller
         }
 
         Repeater {
-            model: VpnTunnels.phase !== "" ? [] : VpnTunnels.profiles.filter(p => !VpnTunnels.connectedProfiles.includes(p.name))
+            model: root.loggingIn ? [] : root.available
 
             MenuRow {
                 required property var modelData
 
-                icon: "vpn_lock"
+                icon: root.vendorIcon(modelData.vendor ?? "")
                 label: modelData.name ?? ""
-                trailing: modelData.vendor ?? ""
+                trailing: root.vendorName(modelData.vendor ?? "")
                 onTriggered: VpnTunnels.startConnect(modelData.name)
             }
         }
@@ -231,11 +363,20 @@ Item {
         StyledText {
             Layout.fillWidth: true
             visible: VpnTunnels.profiles.length === 0
-            text: "No profiles yet — add one with\njarvos-vpn add"
+            text: "No profiles yet. Add one with jarvos-vpn add."
             color: Colours.palette.m3onSurfaceVariant
             font.pointSize: Appearance.font.size.smaller
             wrapMode: Text.WordWrap
         }
+    }
+
+    component Card: StyledRect {
+        property color tint
+
+        Layout.fillWidth: true
+        implicitHeight: children.length > 0 ? children[0].implicitHeight + Appearance.padding.normal * 2 : 0
+        radius: Appearance.rounding.normal
+        color: tint
     }
 
     component MenuRow: Rectangle {
@@ -280,14 +421,12 @@ Item {
                 Layout.fillWidth: true
                 text: menuRow.label
                 color: menuRow.accent
-                font.pointSize: Appearance.font.size.smaller
             }
 
             StyledText {
                 Layout.alignment: Qt.AlignVCenter
                 visible: menuRow.trailing.length > 0
                 text: menuRow.trailing
-                font.family: Appearance.font.family.mono
                 font.pointSize: Appearance.font.size.smaller
                 color: Colours.palette.m3onSurfaceVariant
             }
