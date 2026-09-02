@@ -205,9 +205,10 @@ Singleton {
 
             // The profile being connected has appeared: authentication is
             // over, whatever the client still prints.
-            if (root.connectingSessionViews.length > 0) {
-                for (let i = 0; i < root.connectingSessionViews.length; i++) {
-                    const profile = root.connectingSessionViews[i]?.profile;
+            const connecting = root.connectingSessionViews.slice();
+            if (connecting.length > 0) {
+                for (let i = 0; i < connecting.length; i++) {
+                    const profile = connecting[i]?.profile;
                     if (profile && root.connectedProfiles.includes(profile))
                         root._removeSession(profile);
                 }
