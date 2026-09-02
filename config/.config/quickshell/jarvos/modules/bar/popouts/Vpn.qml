@@ -22,6 +22,13 @@ Item {
     readonly property bool loggingIn: VpnTunnels.phase !== ""
     readonly property bool failed: VpnTunnels.stage === "error"
     readonly property var available: VpnTunnels.profiles.filter(p => !VpnTunnels.connectedProfiles.includes(p.name))
+    property bool addingProfile: false
+    property string addName: ""
+    property string addVendor: ""
+    property string addServer: ""
+    property string addUser: ""
+
+    readonly property bool canAddProfile: addName.trim().length > 0 && addVendor.trim().length > 0 && addServer.trim().length > 0
 
     implicitWidth: contentWidth
     implicitHeight: child.implicitHeight
@@ -60,6 +67,8 @@ Item {
             return `Contacting ${VpnTunnels.activeServer}…`;
         case "prompt":
             return "Enter your authenticator code";
+        case "browser":
+            return "Finish signing in with your browser";
         case "tunnel":
             return "Bringing the tunnel up…";
         default:
@@ -75,6 +84,44 @@ Item {
             if (root.wrapper.currentName === "vpn")
                 VpnTunnels.refresh();
         }
+    }
+
+    Connections {
+        target: VpnTunnels
+        function onAddCompleted(ok: bool): void {
+            if (ok) {
+                root.addingProfile = false;
+                root.addName = "";
+                root.addVendor = "";
+                root.addServer = "";
+                root.addUser = "";
+            }
+        }
+    }
+
+    function openAddProfile(): void {
+        root.addingProfile = true;
+        root.addName = "";
+        root.addVendor = "";
+        root.addServer = "";
+        root.addUser = "";
+        VpnTunnels.addError = "";
+        addNameField.forceActiveFocus();
+    }
+
+    function cancelAddProfile(): void {
+        root.addingProfile = false;
+        root.addName = "";
+        root.addVendor = "";
+        root.addServer = "";
+        root.addUser = "";
+        VpnTunnels.addError = "";
+    }
+
+    function submitAddProfile(): void {
+        if (!root.canAddProfile || VpnTunnels.addBusy)
+            return;
+        VpnTunnels.addProfile(root.addName, root.addVendor, root.addServer, root.addUser);
     }
 
     Timer {
@@ -146,14 +193,14 @@ Item {
                         Layout.alignment: Qt.AlignVCenter
                         implicitSize: Appearance.font.size.normal * 1.6
                         strokeWidth: 2
-                        running: root.loggingIn && VpnTunnels.stage !== "prompt"
+                        running: root.loggingIn && VpnTunnels.stage !== "prompt" && VpnTunnels.stage !== "browser"
                         visible: running
                     }
 
                     MaterialIcon {
                         Layout.alignment: Qt.AlignVCenter
-                        visible: VpnTunnels.stage === "prompt"
-                        text: "password"
+                        visible: VpnTunnels.stage === "prompt" || VpnTunnels.stage === "browser"
+                        text: VpnTunnels.stage === "browser" ? "open_in_browser" : "password"
                         color: Colours.palette.m3primary
                     }
 
@@ -333,6 +380,97 @@ Item {
                         activeColour: Colours.palette.m3error
                         onClicked: VpnTunnels.disconnect(tunnelCard.modelData.profile ?? "")
                     }
+                }
+            }
+        }
+
+        IconTextButton {
+            Layout.fillWidth: true
+            visible: !root.loggingIn
+            icon: root.addingProfile ? "close" : "add"
+            text: root.addingProfile ? "Hide add profile" : "Add profile"
+            type: IconTextButton.Text
+            activeColour: Colours.palette.m3primary
+            onClicked: root.addingProfile ? root.cancelAddProfile() : root.openAddProfile()
+        }
+
+        Card {
+            Layout.fillWidth: true
+            visible: root.addingProfile
+            tint: Colours.palette.m3surfaceContainerHigh
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: Appearance.padding.normal
+                spacing: Appearance.spacing.small
+
+                StyledText {
+                    text: "Add VPN profile"
+                    font.bold: true
+                    font.pointSize: Appearance.font.size.smaller
+                }
+
+                StyledTextField {
+                    id: addNameField
+
+                    Layout.fillWidth: true
+                    text: root.addName
+                    placeholderText: "Profile name (e.g. mte)"
+                    onTextChanged: root.addName = text
+                }
+
+                StyledTextField {
+                    Layout.fillWidth: true
+                    text: root.addVendor
+                    placeholderText: "Vendor (e.g. panorama)"
+                    onTextChanged: root.addVendor = text
+                }
+
+                StyledTextField {
+                    Layout.fillWidth: true
+                    text: root.addServer
+                    placeholderText: "Server hostname"
+                    onTextChanged: root.addServer = text
+                }
+
+                StyledTextField {
+                    Layout.fillWidth: true
+                    text: root.addUser
+                    placeholderText: "Username (optional)"
+                    onTextChanged: root.addUser = text
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Appearance.spacing.small
+
+                    CircularIndicator {
+                        Layout.alignment: Qt.AlignVCenter
+                        visible: VpnTunnels.addBusy
+                        running: visible
+                    }
+
+                    IconButton {
+                        icon: "check"
+                        type: IconButton.Text
+                        disabled: !root.canAddProfile || VpnTunnels.addBusy
+                        onClicked: root.submitAddProfile()
+                    }
+
+                    IconButton {
+                        icon: "close"
+                        type: IconButton.Text
+                        onClicked: root.cancelAddProfile()
+                    }
+                }
+
+                StyledText {
+                    visible: VpnTunnels.addError.length > 0
+                    Layout.fillWidth: true
+                    text: VpnTunnels.addError
+                    color: Colours.palette.m3error
+                    font.pointSize: Appearance.font.size.smaller
+                    wrapMode: Text.WordWrap
                 }
             }
         }

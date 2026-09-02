@@ -41,6 +41,12 @@ Singleton {
     property string errorText: ""
     property string transcript: ""
     property string pendingCommand: ""
+    property bool addBusy: false
+    property string addError: ""
+    property string addStdout: ""
+    property string addStderr: ""
+
+    signal addCompleted(bool ok)
 
     function refresh(): void {
         statusProc.running = true;
@@ -74,7 +80,9 @@ Singleton {
             return;
         }
 
-        if (/Connected as |Configured as |ESP session|DTLS|Established/i.test(tail))
+        if (/browser|Open the following URL|authentication URL/i.test(tail))
+            root.stage = "browser";
+        else if (/Connected as |Configured as |ESP session|DTLS|Established|Connected to the gateway/i.test(tail))
             root.stage = "tunnel";
         else if (/Connected to |GET https|POST https|SSL negotiation/i.test(tail))
             root.stage = "portal";
@@ -139,6 +147,22 @@ Singleton {
         root.stage = "";
         root.errorText = "";
         root.activeProfile = "";
+    }
+
+    function addProfile(name: string, vendor: string, server: string, user: string): void {
+        if (name.trim() === "" || vendor.trim() === "" || server.trim() === "")
+            return;
+        if (root.addBusy)
+            return;
+
+        root.addError = "";
+        root.addStdout = "";
+        root.addStderr = "";
+        addProc.command = ["jarvos-vpn", "add", "--name", name.trim(), "--vendor", vendor.trim(), "--server", server.trim(), "--auth", "sso"];
+        if (user.trim() !== "")
+            addProc.command.push("--user", user.trim());
+        root.addBusy = true;
+        addProc.running = true;
     }
 
     function disconnect(profile: string): void {
@@ -254,6 +278,32 @@ Singleton {
                 root.stage = "";
             }
             root.refresh();
+        }
+    }
+
+    Process {
+        id: addProc
+
+        onExited: (code, status) => {
+            const message = (root.addStderr.trim() || root.addStdout.trim()) || `jarvos-vpn add failed (${code})`;
+            root.addBusy = false;
+            if (code !== 0) {
+                root.addError = message;
+                root.addCompleted(false);
+                return;
+            }
+
+            root.addError = "";
+            root.addCompleted(true);
+            root.refresh();
+        }
+
+        stdout: StdioCollector {
+            onStreamFinished: root.addStdout = text
+        }
+
+        stderr: StdioCollector {
+            onStreamFinished: root.addStderr = text
         }
     }
 
