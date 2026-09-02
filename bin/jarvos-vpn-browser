@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Open GlobalProtect SAML in a clean browser context. The regular Chrome
+# profile may already have an Entra session and silently skip the account
+# prompt, which makes the portal callback look like the authentication page.
+
+set -euo pipefail
+
+for candidate in google-chrome-stable google-chrome chromium; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+        exec "$candidate" --incognito --new-window --no-first-run --no-default-browser-check "$@"
+    fi
+done
+
+printf 'jarvos-vpn-browser: Chrome or Chromium is required\n' >&2
+exit 1

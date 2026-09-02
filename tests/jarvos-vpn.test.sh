@@ -90,19 +90,31 @@ fi
 
 # --- vendor dispatch: the reason this wrapper exists ----------------------
 
-start_test "GlobalProtect dispatches to the GP Connect GUI"
+start_test "GlobalProtect dispatches to the open-source CLI"
 run_cmd jarvos-vpn connect work --dry-run
 assert_status "$RUN_STATUS" 0 &&
     assert_stdout_contains "$RUN_OUT" "gpclient" &&
-    assert_stdout_contains "$RUN_OUT" "launch-gui" &&
+    assert_stdout_contains "$RUN_OUT" "connect" &&
+    assert_stdout_contains "$RUN_OUT" "vpn-work" &&
     pass_test
 
-start_test "and the GUI owns the embedded SAML browser"
-if [[ "$RUN_OUT" != *"--browser"* ]]; then
+start_test "and SAML uses an isolated browser instead of the broken WebKit view"
+assert_stdout_contains "$RUN_OUT" "--browser" &&
+    assert_stdout_contains "$RUN_OUT" "jarvos-vpn-browser" &&
     pass_test
-else
-    fail_test "GlobalProtect still selected the external browser: $RUN_OUT"
-fi
+
+start_test "the isolated browser forces a fresh Entra session"
+cat >"$FAKE_BIN/google-chrome-stable" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >"$FAKE_STATE/chrome-argv"
+EOF
+chmod +x "$FAKE_BIN/google-chrome-stable"
+run_cmd jarvos-vpn-browser https://auth.example
+assert_status "$RUN_STATUS" 0 &&
+    assert_contains "$FAKE_STATE/chrome-argv" "--incognito" &&
+    assert_contains "$FAKE_STATE/chrome-argv" "--new-window" &&
+    assert_contains "$FAKE_STATE/chrome-argv" "https://auth.example" &&
+    pass_test
 
 start_test "Fortinet dispatches to openconnect with its protocol"
 run_cmd jarvos-vpn connect client-a --dry-run
@@ -256,11 +268,21 @@ assert_contains "$FAKE_STATE/secret-tool-argv" "jarvos-vpn" &&
 
 # --- connect: SSO vs password --------------------------------------------
 
-start_test "a GlobalProtect SSO profile opens GP Connect and asks for no password"
+start_test "a GlobalProtect SSO profile uses the external browser callback"
 run_cmd jarvos-vpn connect mte --dry-run
 assert_status "$RUN_STATUS" 0 &&
-    assert_stdout_contains "$RUN_OUT" "launch-gui" &&
+    assert_stdout_contains "$RUN_OUT" "gpclient" &&
+    assert_stdout_contains "$RUN_OUT" "connect" &&
+    assert_stdout_contains "$RUN_OUT" "jarvos-vpn-browser" &&
     { [[ "$RUN_OUT" != *passwd-on-stdin* ]] || fail_test "an SSO profile asked for a password"; } &&
+    pass_test
+
+start_test "a GlobalProtect profile pins its configured gateway"
+jq 'map(if .name == "mte" then . + {"gateway": "primary.example"} else . end)' "$PROFILES" >"$PROFILES.tmp"
+mv "$PROFILES.tmp" "$PROFILES"
+run_cmd jarvos-vpn connect mte --dry-run
+assert_status "$RUN_STATUS" 0 &&
+    assert_stdout_contains "$RUN_OUT" "--gateway primary.example" &&
     pass_test
 
 start_test "a Fortinet SSO profile uses openconnect's external browser"
