@@ -10,9 +10,9 @@
 # already implements, so a profile names a vendor and this dispatches to the
 # binary that speaks it:
 #
-#   globalprotect  gpclient   — openconnect underneath, but its SAML/SSO flow
-#                               needs gpauth, which is why raw openconnect is
-#                               not enough for a Panorama-managed portal
+#   globalprotect  gpclient   — the GP Connect GUI owns the embedded webview
+#                               required by Entra ID / SAML, then runs
+#                               openconnect underneath
 #   fortinet       openconnect --protocol=fortinet
 #   anyconnect     openconnect --protocol=anyconnect   (Cisco, ocserv)
 #   f5             openconnect --protocol=f5
@@ -85,14 +85,21 @@ iface_for() { printf 'vpn-%s' "${1:0:11}"; }
 # not go through this wrapper name their interfaces however they like;
 # tailscale0 is the same kind and excluded because it has its own indicator.
 tunnels_json() {
+    local globalprotect_profiles='[]'
+    if [[ -r "$PROFILES" ]]; then
+        globalprotect_profiles="$(jq -c '[.[] | select((.vendor // "" | ascii_downcase) == "globalprotect") | select((.interface // "tun0") == "tun0") | .name]' "$PROFILES" 2>/dev/null || echo '[]')"
+    fi
+
     ip -j -d addr show 2>/dev/null |
-        jq -c '[.[]
+        jq -c --argjson gp "$globalprotect_profiles" '[.[]
             | select(.ifname != "tailscale0")
             | select((.linkinfo.info_kind // "") | IN("tun","tap","wireguard","ppp"))
             | select(any(.addr_info[]?; .family=="inet"))
             | {iface: .ifname,
                ip: (.addr_info[] | select(.family=="inet") | .local),
-               profile: (if (.ifname|startswith("vpn-")) then .ifname[4:] else null end)}
+               profile: (if (.ifname|startswith("vpn-")) then .ifname[4:]
+                        elif .ifname == "tun0" and ($gp|length) == 1 then $gp[0]
+                        else null end)}
         ]' 2>/dev/null || echo '[]'
 }
 
@@ -223,12 +230,10 @@ cmd_remove() {
 }
 
 build_command() {
-    local profile="$1" vendor server gateway user browser iface hip
+    local profile="$1" vendor server user browser iface
     server="$(jq -r '.server // ""' <<<"$profile")"
-    gateway="$(jq -r '.gateway // ""' <<<"$profile")"
     user="$(jq -r '.user // ""' <<<"$profile")"
     browser="$(jq -r '.browser // "default"' <<<"$profile")"
-    hip="$(jq -r '.hip // ""' <<<"$profile")"
     # The interface is always ours. A profile may not override it: it is how
     # status and disconnect find this tunnel among several.
     iface="$(iface_for "$(jq -r '.name' <<<"$profile")")"
@@ -244,17 +249,13 @@ build_command() {
     local -a cmd
     case "$vendor" in
         globalprotect)
-            # gpclient wraps openconnect and drives the SAML exchange through
-            # gpauth. --browser keeps that in the user's own browser instead of
-            # the licensed GUI's embedded one, which is what makes an EntraID
-            # portal work without the paid component.
-            cmd=(sudo gpclient connect "$server")
-            [[ "$auth" == "sso" ]] && cmd+=(--browser "$browser")
-            [[ "$auth" == "password" ]] && cmd+=(--passwd-on-stdin)
-            [[ -n "$gateway" ]] && cmd+=(--gateway "$gateway")
-            [[ -n "$user" ]] && cmd+=(--user "$user")
-            cmd+=(--interface "$iface")
-            [[ -n "$hip" ]] && cmd+=(--hip "$hip")
+            # The CLI's external-browser mode hands the callback to the GUI
+            # helper. That helper needs the CLI to remain alive and is fragile
+            # when launched from a non-TTY Process. GP Connect's own webview
+            # handles Entra ID/SAML and owns the resulting tunnel reliably.
+            # Its portal is persisted by GP Connect, so server remains profile
+            # metadata for the menu and status association.
+            cmd=(gpclient launch-gui)
             ;;
         checkpoint)
             command -v snx-rs >/dev/null 2>&1 ||
@@ -289,16 +290,24 @@ cmd_connect() {
     auth="$(jq -r '.auth // "sso"' <<<"$profile")"
     line="$(build_command "$profile")"
 
+    local vendor
+    vendor="$(canonical_vendor "$(jq -r '.vendor // ""' <<<"$profile")")"
+
     # Checked before connecting rather than after: openconnect would otherwise
     # sit at a password prompt inside a terminal the menu opened, which reads
     # as a hang.
-    if [[ "$auth" == "password" ]] && ! keyring_lookup "$name" >/dev/null; then
+    if [[ "$vendor" != "globalprotect" && "$auth" == "password" ]] && ! keyring_lookup "$name" >/dev/null; then
         die "no password stored for '$name' — run: jarvos-vpn set-password $name"
     fi
 
     if [[ -n "$dry" ]]; then
         printf '%s\n' "$line"
         return 0
+    fi
+
+    if [[ "$vendor" == "globalprotect" ]]; then
+        printf 'Opening GP Connect for %s.\n' "$name"
+        exec gpclient launch-gui
     fi
 
     printf 'Connecting %s…\n' "$name"
@@ -351,7 +360,19 @@ cmd_disconnect() {
         fi
     fi
 
-    local iface
+    local iface profile vendor
+    iface="$(jq -r --arg n "$name" '.[] | select(.profile == $n) | .iface' <<<"$tuns")"
+    [[ -n "$iface" ]] || die "no tunnel up for '$name'"
+
+    profile="$(load_profile "$name")"
+    vendor="$(canonical_vendor "$(jq -r '.vendor // ""' <<<"$profile")")"
+
+    if [[ "$vendor" == "globalprotect" ]]; then
+        sudo gpclient disconnect
+        printf 'Disconnected %s\n' "$name"
+        return 0
+    fi
+
     iface="$(iface_for "$name")"
     jq -e --arg i "$iface" 'any(.[]; .iface == $i)' <<<"$tuns" >/dev/null ||
         die "no tunnel up for '$name'"

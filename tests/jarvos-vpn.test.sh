@@ -90,15 +90,19 @@ fi
 
 # --- vendor dispatch: the reason this wrapper exists ----------------------
 
-start_test "GlobalProtect dispatches to gpclient, which owns the SAML flow"
+start_test "GlobalProtect dispatches to the GP Connect GUI"
 run_cmd jarvos-vpn connect work --dry-run
 assert_status "$RUN_STATUS" 0 &&
     assert_stdout_contains "$RUN_OUT" "gpclient" &&
-    assert_stdout_contains "$RUN_OUT" "vpn.example.com" &&
+    assert_stdout_contains "$RUN_OUT" "launch-gui" &&
     pass_test
 
-start_test "and it asks for an external browser, not the licensed GUI"
-assert_stdout_contains "$RUN_OUT" "--browser" && pass_test
+start_test "and the GUI owns the embedded SAML browser"
+if [[ "$RUN_OUT" != *"--browser"* ]]; then
+    pass_test
+else
+    fail_test "GlobalProtect still selected the external browser: $RUN_OUT"
+fi
 
 start_test "Fortinet dispatches to openconnect with its protocol"
 run_cmd jarvos-vpn connect client-a --dry-run
@@ -252,10 +256,10 @@ assert_contains "$FAKE_STATE/secret-tool-argv" "jarvos-vpn" &&
 
 # --- connect: SSO vs password --------------------------------------------
 
-start_test "an SSO profile opens a browser and asks for no password"
+start_test "a GlobalProtect SSO profile opens GP Connect and asks for no password"
 run_cmd jarvos-vpn connect mte --dry-run
 assert_status "$RUN_STATUS" 0 &&
-    assert_stdout_contains "$RUN_OUT" "--browser" &&
+    assert_stdout_contains "$RUN_OUT" "launch-gui" &&
     { [[ "$RUN_OUT" != *passwd-on-stdin* ]] || fail_test "an SSO profile asked for a password"; } &&
     pass_test
 
@@ -320,7 +324,29 @@ else
     fail_test "expected two tagged tunnels: $RUN_OUT"
 fi
 
+start_test "the GP Connect tun0 tunnel is tagged when one GlobalProtect profile exists"
+write_profiles <<'EOF'
+[{"name": "mte", "vendor": "globalprotect", "server": "vpn.example.com"}]
+EOF
+cat >"$FAKE_STATE/ip-json" <<'EOF'
+[{"ifname":"tun0","linkinfo":{"info_kind":"tun"},"addr_info":[{"family":"inet","local":"172.17.66.5"}]}]
+EOF
+run_cmd jarvos-vpn status --json
+if printf '%s' "$RUN_OUT" | jq -e '.tunnels[0].profile == "mte"' >/dev/null 2>&1; then
+    pass_test
+else
+    fail_test "expected tun0 to be tagged mte: $RUN_OUT"
+fi
+
 start_test "with two tunnels up, a bare disconnect refuses to guess"
+write_profiles <<'EOF'
+[{"name": "mre-tci", "vendor": "fortinet", "server": "a.example", "auth": "sso"},
+ {"name": "mte",     "vendor": "paloalto", "server": "b.example", "auth": "sso"}]
+EOF
+cat >"$FAKE_STATE/ip-json" <<'EOF'
+[{"ifname":"vpn-mre-tci","linkinfo":{"info_kind":"tun"},"addr_info":[{"family":"inet","local":"172.17.66.4"}]},
+ {"ifname":"vpn-mte","linkinfo":{"info_kind":"tun"},"addr_info":[{"family":"inet","local":"10.200.1.7"}]}]
+EOF
 run_cmd jarvos-vpn disconnect
 assert_status "$RUN_STATUS" 1 &&
     assert_stdout_contains "$RUN_OUT" "mre-tci" &&
@@ -349,7 +375,28 @@ assert_status "$RUN_STATUS" 0 &&
     assert_not_contains "$FAKE_STATE/pkill-argv" "vpn-mte" &&
     pass_test
 
+start_test "disconnecting a GlobalProtect tunnel uses GP Connect only"
+cat >"$FAKE_BIN/gpclient" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FAKE_STATE/gpclient-argv"
+EOF
+chmod +x "$FAKE_BIN/gpclient"
+write_profiles <<'EOF'
+[{"name": "mte", "vendor": "globalprotect", "server": "b.example", "auth": "sso"}]
+EOF
+cat >"$FAKE_STATE/ip-json" <<'EOF'
+[{"ifname":"tun0","linkinfo":{"info_kind":"tun"},"addr_info":[{"family":"inet","local":"10.200.1.7"}]}]
+EOF
+: >"$FAKE_STATE/gpclient-argv"
+run_cmd jarvos-vpn disconnect mte
+assert_status "$RUN_STATUS" 0 &&
+    assert_contains "$FAKE_STATE/gpclient-argv" "disconnect" &&
+    pass_test
+
 start_test "with exactly one tunnel, a bare disconnect knows which"
+write_profiles <<'EOF'
+[{"name": "mte", "vendor": "fortinet", "server": "b.example", "auth": "sso"}]
+EOF
 cat >"$FAKE_STATE/ip-json" <<'EOF'
 [{"ifname":"vpn-mte","linkinfo":{"info_kind":"tun"},"addr_info":[{"family":"inet","local":"10.200.1.7"}]}]
 EOF
