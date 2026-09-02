@@ -188,4 +188,176 @@ assert_status "$RUN_STATUS" 1 &&
     assert_stdout_contains "$RUN_OUT" "profiles" &&
     pass_test
 
+# --- adding profiles -----------------------------------------------------
+
+# secret-tool is shimmed to record how it was called. What matters is not that
+# it stored something but HOW: a password on the command line is readable by
+# every process on the machine via ps, so it must arrive on stdin.
+cat >"$FAKE_BIN/secret-tool" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FAKE_STATE/secret-tool-argv"
+case "${1-}" in
+    store)  cat > "$FAKE_STATE/secret-tool-stdin" ;;
+    lookup) cat "$FAKE_STATE/secret-tool-stored" 2>/dev/null || exit 1 ;;
+    clear)  rm -f "$FAKE_STATE/secret-tool-stored" ;;
+esac
+EOF
+chmod +x "$FAKE_BIN/secret-tool"
+: >"$FAKE_STATE/secret-tool-argv"
+
+printf '[]\n' >"$PROFILES"
+
+start_test "add writes a profile"
+run_cmd jarvos-vpn add --name mte --vendor panorama --server vpn.mte.example --auth sso
+assert_status "$RUN_STATUS" 0 &&
+    assert_contains "$PROFILES" "mte" &&
+    pass_test
+
+start_test "and normalises the vendor people say into the one we dispatch on"
+if grep -q '"vendor": *"globalprotect"' "$PROFILES"; then
+    pass_test
+else
+    fail_test "panorama was not normalised: $(cat "$PROFILES")"
+fi
+
+start_test "adding the same name twice is refused, not silently merged"
+run_cmd jarvos-vpn add --name mte --vendor fortinet --server other.example
+assert_status "$RUN_STATUS" 1 && pass_test
+
+start_test "add refuses a vendor we cannot dispatch"
+run_cmd jarvos-vpn add --name x --vendor nortel --server x.example
+assert_status "$RUN_STATUS" 1 && pass_test
+
+start_test "add refuses to take a password as an argument"
+# There is a --password flag people will reach for. It must not exist: an
+# argument is visible in ps to every process on the box.
+run_cmd jarvos-vpn add --name y --vendor fortinet --server y.example --password hunter2
+assert_status "$RUN_STATUS" 1 &&
+    { [[ "$RUN_OUT" != *hunter2* ]] || fail_test "the refusal echoed the password"; } &&
+    pass_test
+
+# --- passwords ------------------------------------------------------------
+
+start_test "set-password reads the secret from stdin, never from argv"
+run_cmd_stdin "correct-horse" jarvos-vpn set-password mte
+assert_status "$RUN_STATUS" 0 &&
+    assert_contains "$FAKE_STATE/secret-tool-stdin" "correct-horse" &&
+    assert_not_contains "$FAKE_STATE/secret-tool-argv" "correct-horse" &&
+    pass_test
+
+start_test "the keyring entry is scoped to this app and this profile"
+assert_contains "$FAKE_STATE/secret-tool-argv" "jarvos-vpn" &&
+    assert_contains "$FAKE_STATE/secret-tool-argv" "mte" &&
+    pass_test
+
+# --- connect: SSO vs password --------------------------------------------
+
+start_test "an SSO profile opens a browser and asks for no password"
+run_cmd jarvos-vpn connect mte --dry-run
+assert_status "$RUN_STATUS" 0 &&
+    assert_stdout_contains "$RUN_OUT" "--browser" &&
+    { [[ "$RUN_OUT" != *passwd-on-stdin* ]] || fail_test "an SSO profile asked for a password"; } &&
+    pass_test
+
+start_test "a Fortinet SSO profile uses openconnect's external browser"
+run_cmd jarvos-vpn add --name forti-sso --vendor fortinet --server fw.example --auth sso
+run_cmd jarvos-vpn connect forti-sso --dry-run
+assert_stdout_contains "$RUN_OUT" "--external-browser" && pass_test
+
+start_test "a password profile feeds the secret on stdin, not on the command line"
+run_cmd jarvos-vpn add --name pw --vendor fortinet --server pw.example --user bob --auth password
+echo "s3cret" >"$FAKE_STATE/secret-tool-stored"
+run_cmd jarvos-vpn connect pw --dry-run
+assert_status "$RUN_STATUS" 0 &&
+    assert_stdout_contains "$RUN_OUT" "--passwd-on-stdin" &&
+    { [[ "$RUN_OUT" != *s3cret* ]] || fail_test "the password reached the command line"; } &&
+    pass_test
+
+start_test "a password profile with nothing in the keyring says so before connecting"
+rm -f "$FAKE_STATE/secret-tool-stored"
+run_cmd jarvos-vpn connect pw --dry-run
+assert_status "$RUN_STATUS" 1 &&
+    assert_stdout_contains "$RUN_OUT" "set-password" &&
+    pass_test
+
+# --- removing -------------------------------------------------------------
+
+start_test "remove drops the profile and its keyring entry together"
+echo "s3cret" >"$FAKE_STATE/secret-tool-stored"
+run_cmd jarvos-vpn remove pw
+assert_status "$RUN_STATUS" 0 &&
+    assert_not_contains "$PROFILES" '"pw"' &&
+    assert_contains "$FAKE_STATE/secret-tool-argv" "clear" &&
+    pass_test
+
+# --- several tunnels at once ---------------------------------------------
+
+start_test "every profile gets its own interface, named after it"
+write_profiles <<'EOF'
+[{"name": "mre-tci", "vendor": "fortinet", "server": "a.example", "auth": "sso"},
+ {"name": "mte",     "vendor": "paloalto", "server": "b.example", "auth": "sso"}]
+EOF
+run_cmd jarvos-vpn connect mre-tci --dry-run
+assert_stdout_contains "$RUN_OUT" "vpn-mre-tci" && pass_test
+
+start_test "and the name is capped to what the kernel allows (15 chars)"
+write_profiles <<'EOF'
+[{"name": "a-very-long-profile-name", "vendor": "fortinet", "server": "x.example", "auth": "sso"}]
+EOF
+run_cmd jarvos-vpn connect a-very-long-profile-name --dry-run
+iface="$(printf '%s' "$RUN_OUT" | grep -oE 'vpn-[A-Za-z0-9-]+' | head -1)"
+if [[ -n "$iface" && "${#iface}" -le 15 ]]; then pass_test; else fail_test "interface '$iface' exceeds 15 chars"; fi
+
+start_test "status lists every tunnel, each tagged with its profile"
+cat >"$FAKE_STATE/ip-json" <<'EOF'
+[{"ifname":"vpn-mre-tci","linkinfo":{"info_kind":"tun"},"addr_info":[{"family":"inet","local":"172.17.66.4"}]},
+ {"ifname":"vpn-mte","linkinfo":{"info_kind":"tun"},"addr_info":[{"family":"inet","local":"10.200.1.7"}]}]
+EOF
+run_cmd jarvos-vpn status --json
+if printf '%s' "$RUN_OUT" | jq -e '.connected and (.tunnels|length==2) and (.tunnels[0].profile=="mre-tci") and (.tunnels[1].profile=="mte")' >/dev/null 2>&1; then
+    pass_test
+else
+    fail_test "expected two tagged tunnels: $RUN_OUT"
+fi
+
+start_test "with two tunnels up, a bare disconnect refuses to guess"
+run_cmd jarvos-vpn disconnect
+assert_status "$RUN_STATUS" 1 &&
+    assert_stdout_contains "$RUN_OUT" "mre-tci" &&
+    assert_stdout_contains "$RUN_OUT" "mte" &&
+    pass_test
+
+start_test "disconnecting one names the interface so only that client is signalled"
+cat >"$FAKE_BIN/pkill" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FAKE_STATE/pkill-argv"
+EOF
+chmod +x "$FAKE_BIN/pkill"
+cat >"$FAKE_BIN/pgrep" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+chmod +x "$FAKE_BIN/pgrep"
+: >"$FAKE_STATE/pkill-argv"
+write_profiles <<'EOF'
+[{"name": "mre-tci", "vendor": "fortinet", "server": "a.example", "auth": "sso"},
+ {"name": "mte",     "vendor": "paloalto", "server": "b.example", "auth": "sso"}]
+EOF
+run_cmd jarvos-vpn disconnect mre-tci
+assert_status "$RUN_STATUS" 0 &&
+    assert_contains "$FAKE_STATE/pkill-argv" "vpn-mre-tci" &&
+    assert_not_contains "$FAKE_STATE/pkill-argv" "vpn-mte" &&
+    pass_test
+
+start_test "with exactly one tunnel, a bare disconnect knows which"
+cat >"$FAKE_STATE/ip-json" <<'EOF'
+[{"ifname":"vpn-mte","linkinfo":{"info_kind":"tun"},"addr_info":[{"family":"inet","local":"10.200.1.7"}]}]
+EOF
+: >"$FAKE_STATE/pkill-argv"
+run_cmd jarvos-vpn disconnect
+assert_status "$RUN_STATUS" 0 &&
+    assert_contains "$FAKE_STATE/pkill-argv" "vpn-mte" &&
+    pass_test
+echo '[]' >"$FAKE_STATE/ip-json"
+
 summary "jarvos-vpn"

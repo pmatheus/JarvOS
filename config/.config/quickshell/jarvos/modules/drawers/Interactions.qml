@@ -1,3 +1,4 @@
+import qs.services
 import qs.components.controls
 import qs.config
 import qs.modules.bar.popouts as BarPopouts
@@ -92,7 +93,11 @@ CustomMouseArea {
             const isTrayMenu = popouts.currentName.startsWith("traymenu");
             const hasSubMenu = isTrayMenu && (popouts.current?.depth > 1);
 
-            if (!isTrayMenu || !hasSubMenu) {
+            // A VPN login waiting on a 2FA code must survive the mouse leaving:
+            // the user is about to type into it.
+            const holdsVpnPrompt = popouts.currentName === "vpn" && VpnTunnels.phase === "prompt";
+
+            if ((!isTrayMenu || !hasSubMenu) && !holdsVpnPrompt) {
                 popouts.hasCurrent = false;
                 bar.closeTray();
             }
