@@ -95,7 +95,7 @@ CustomMouseArea {
 
             // A VPN login waiting on a 2FA code must survive the mouse leaving:
             // the user is about to type into it.
-            const holdsVpnPrompt = popouts.currentName === "vpn" && VpnTunnels.phase === "prompt";
+            const holdsVpnPrompt = popouts.currentName === "vpn" && VpnTunnels.connectingSessionViews.some(s => s?.stage === "prompt");
 
             if ((!isTrayMenu || !hasSubMenu) && !holdsVpnPrompt) {
                 popouts.hasCurrent = false;
