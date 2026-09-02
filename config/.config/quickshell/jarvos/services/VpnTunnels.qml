@@ -6,20 +6,19 @@ import QtQuick
 
 // The case-VPN connection engine behind the bar's VPN menu.
 //
-// This is a singleton, and that is load-bearing: the bar popouts are Loaders
-// that unload when the menu closes, and a Process is killed with the item that
-// owns it. The first version of the menu ran openconnect inside the popout, and
-// the tunnel died the moment the mouse left the menu. Here the connection
-// outlives any menu.
+// This is a singleton on purpose: the bar popouts are Loaders that unload
+// when the menu closes, and a Process is killed with the item that owns it.
+// The first version ran openconnect inside the popout, and the tunnel died
+// the moment the mouse left the menu. Here the connection outlives any menu.
 //
-// It runs the client rather than a terminal, and that is a security property:
-// a terminal echoes what is typed, so a 2FA code — and, on a retry, the
-// password — end up on screen and in scrollback. A Process has no tty, so
-// nothing is echoed, and the menu's field masks what the user types.
+// It runs the client rather than a terminal, and that is a security
+// property: a terminal echoes what is typed, so a 2FA code — and, on a
+// retry, the password — end up on screen and in scrollback. A Process has
+// no tty, so nothing is echoed, and the menu's field masks what is typed.
 //
-// Secrets never reach a command line. The password goes keyring → stdin, and
-// openconnect is given --passwd-on-stdin; argv holds only server, protocol
-// and username.
+// Secrets never reach a command line. The password goes keyring → stdin,
+// and openconnect is given --passwd-on-stdin; argv holds only server,
+// protocol and username.
 Singleton {
     id: root
 
@@ -32,14 +31,24 @@ Singleton {
 
     // "" idle · "auth" client running · "prompt" waiting on the user
     property string phase: ""
+    // What the client is doing, read off its output so the menu can say it
+    // in one line instead of showing the raw log:
+    // "" · "portal" · "prompt" · "tunnel" · "error"
+    property string stage: ""
     property string activeProfile: ""
+    property string activeServer: ""
     property string promptLabel: ""
+    property string errorText: ""
     property string transcript: ""
     property string pendingCommand: ""
 
     function refresh(): void {
         statusProc.running = true;
         listProc.running = true;
+    }
+
+    function profileFor(name: string): var {
+        return root.profiles.find(p => p.name === name) ?? null;
     }
 
     // Everything openconnect asks for after the password is a second factor.
@@ -61,16 +70,44 @@ Singleton {
         if (m) {
             root.promptLabel = m[1];
             root.phase = "prompt";
+            root.stage = "prompt";
+            return;
         }
+
+        if (/Connected as |Configured as |ESP session|DTLS|Established/i.test(tail))
+            root.stage = "tunnel";
+        else if (/Connected to |GET https|POST https|SSL negotiation/i.test(tail))
+            root.stage = "portal";
+    }
+
+    // The one line worth showing when the client gives up: the last line
+    // that is not transport chatter or a masked echo.
+    function lastMeaningfulLine(): string {
+        const lines = root.transcript.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+        for (let i = lines.length - 1; i >= 0; i--) {
+            const l = lines[i];
+            if (/^\*+$/.test(l))
+                continue;
+            if (/^(GET|POST) https|^Connected to |^SSL negotiation|^Attempting|^Got |^Using /i.test(l))
+                continue;
+            if (/:$/.test(l))
+                continue;
+            return l;
+        }
+        return "The client exited without saying why";
     }
 
     function startConnect(name: string): void {
         if (root.phase !== "")
             return;
+        const p = profileFor(name);
         root.activeProfile = name;
+        root.activeServer = p?.server ?? "";
         root.transcript = "";
         root.promptLabel = "";
+        root.errorText = "";
         root.phase = "auth";
+        root.stage = "portal";
         // jarvos-vpn owns the vendor dispatch; --dry-run prints the command
         // instead of running it, so this process can own its stdin.
         commandProc.command = ["jarvos-vpn", "connect", name, "--dry-run"];
@@ -84,6 +121,7 @@ Singleton {
             return;
         conn.write(text + "\n");
         root.phase = "auth";
+        root.stage = "tunnel";
         root.promptLabel = "";
     }
 
@@ -91,7 +129,15 @@ Singleton {
         if (conn.running)
             conn.signal(15);
         root.phase = "";
+        root.stage = "";
         root.promptLabel = "";
+        root.errorText = "";
+        root.activeProfile = "";
+    }
+
+    function dismissError(): void {
+        root.stage = "";
+        root.errorText = "";
         root.activeProfile = "";
     }
 
@@ -120,8 +166,11 @@ Singleton {
                 }
                 // The profile being connected has appeared: authentication is
                 // over, whatever the client still prints.
-                if (root.phase !== "" && root.connectedProfiles.includes(root.activeProfile))
+                if (root.phase !== "" && root.connectedProfiles.includes(root.activeProfile)) {
                     root.phase = "";
+                    root.stage = "";
+                    root.activeProfile = "";
+                }
             }
         }
     }
@@ -149,6 +198,8 @@ Singleton {
                 const line = text.trim();
                 if (line.length === 0) {
                     root.phase = "";
+                    root.stage = "error";
+                    root.errorText = "jarvos-vpn could not build a command for this profile";
                     return;
                 }
                 root.pendingCommand = line;
@@ -168,7 +219,9 @@ Singleton {
                 // Start the client first, then hand it the password. Doing
                 // both at once raced: the write landed before stdin was open
                 // and was lost.
-                conn.command = ["sh", "-c", root.pendingCommand];
+                // Own scope unit: the shell's service is KillMode=control-group,
+                // so a plain child would die with every quickshell restart.
+                conn.command = ["systemd-run", "--user", "--scope", "--quiet", "--collect", `--unit=jarvos-vpn-${root.activeProfile}`, "--", "sh", "-c", root.pendingCommand];
                 conn.running = true;
                 if (text.length > 0)
                     conn.write(text.replace(/\n$/, "") + "\n");
@@ -190,9 +243,16 @@ Singleton {
             onTextChanged: root.examine(text)
         }
 
-        onExited: {
+        onExited: (code, status) => {
+            const wasLoggingIn = root.phase !== "";
             root.phase = "";
             root.promptLabel = "";
+            if (wasLoggingIn && code !== 0) {
+                root.stage = "error";
+                root.errorText = root.lastMeaningfulLine();
+            } else if (wasLoggingIn) {
+                root.stage = "";
+            }
             root.refresh();
         }
     }
