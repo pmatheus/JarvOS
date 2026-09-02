@@ -19,9 +19,9 @@ Item {
     readonly property int contentWidth: 340
     property string copiedIp: ""
 
-    readonly property bool loggingIn: VpnTunnels.phase !== ""
-    readonly property bool failed: VpnTunnels.stage === "error"
-    readonly property var available: VpnTunnels.profiles.filter(p => !VpnTunnels.connectedProfiles.includes(p.name))
+    readonly property var connectingSessions: VpnTunnels.connectingSessionViews ?? []
+    readonly property var failedSessions: VpnTunnels.errorSessionViews ?? []
+    readonly property var available: VpnTunnels.profiles.filter(p => !VpnTunnels.connectedProfiles.includes(p.name) && !VpnTunnels.sessionIsBusyOrErrored(p.name))
     property bool addingProfile: false
     property string addName: ""
     property string addVendor: ""
@@ -61,10 +61,12 @@ Item {
         }
     }
 
-    function stageText(): string {
-        switch (VpnTunnels.stage) {
+    function stageText(session: var): string {
+        if (!session)
+            return "";
+        switch (session.stage) {
         case "portal":
-            return `Contacting ${VpnTunnels.activeServer}…`;
+            return `Contacting ${session.server}…`;
         case "prompt":
             return "Enter your authenticator code";
         case "browser":
@@ -175,33 +177,119 @@ Item {
             }
         }
 
-        // Login in progress
-        Card {
-            visible: root.loggingIn
-            tint: Colours.palette.m3surfaceContainerHigh
+        // Logins and authentication prompts for active sessions
+        Repeater {
+            model: root.connectingSessions
 
-            ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: Appearance.padding.normal
-                spacing: Appearance.spacing.small
+            Card {
+                required property var modelData
+                readonly property var session: modelData
+
+                tint: Colours.palette.m3surfaceContainerHigh
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: Appearance.padding.normal
+                    spacing: Appearance.spacing.small
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Appearance.spacing.normal
+
+                        CircularIndicator {
+                            Layout.alignment: Qt.AlignVCenter
+                            implicitSize: Appearance.font.size.normal * 1.6
+                            strokeWidth: 2
+                            running: session.stage !== "prompt" && session.stage !== "browser"
+                            visible: running
+                        }
+
+                        MaterialIcon {
+                            Layout.alignment: Qt.AlignVCenter
+                            visible: session.stage === "prompt" || session.stage === "browser"
+                            text: session.stage === "browser" ? "open_in_browser" : "password"
+                            color: Colours.palette.m3primary
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 0
+
+                            StyledText {
+                                text: session.profile
+                                font.bold: true
+                            }
+
+                            StyledText {
+                                Layout.fillWidth: true
+                                text: root.stageText(session)
+                                color: Colours.palette.m3onSurfaceVariant
+                                font.pointSize: Appearance.font.size.smaller
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        IconButton {
+                            icon: "close"
+                            type: IconButton.Text
+                            onClicked: VpnTunnels.cancel(session.profile)
+                        }
+                    }
+
+                    // The second factor. Masked, and it never touches a command
+                    // line: the value goes straight to the client's stdin.
+                    RowLayout {
+                        Layout.fillWidth: true
+                        visible: session.stage === "prompt"
+                        spacing: Appearance.spacing.small
+
+                        StyledTextField {
+                            id: codeField
+
+                            Layout.fillWidth: true
+                            echoMode: TextInput.Password
+                            inputMethodHints: Qt.ImhHiddenText | Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
+                            placeholderText: `${session.promptLabel}…`
+                            font.family: Appearance.font.family.mono
+
+                            onVisibleChanged: if (visible)
+                                forceActiveFocus()
+
+                            onAccepted: {
+                                VpnTunnels.answer(session.profile, text);
+                                text = "";
+                            }
+                        }
+
+                        IconButton {
+                            icon: "send"
+                            disabled: codeField.text.length === 0
+                            onClicked: codeField.accepted()
+                        }
+                    }
+                }
+            }
+        }
+
+        // Connection failures, one card per profile in error
+        Repeater {
+            model: root.failedSessions
+
+            Card {
+                required property var modelData
+                readonly property var session: modelData
+
+                tint: Colours.palette.m3errorContainer
 
                 RowLayout {
-                    Layout.fillWidth: true
+                    anchors.fill: parent
+                    anchors.margins: Appearance.padding.normal
                     spacing: Appearance.spacing.normal
-
-                    CircularIndicator {
-                        Layout.alignment: Qt.AlignVCenter
-                        implicitSize: Appearance.font.size.normal * 1.6
-                        strokeWidth: 2
-                        running: root.loggingIn && VpnTunnels.stage !== "prompt" && VpnTunnels.stage !== "browser"
-                        visible: running
-                    }
 
                     MaterialIcon {
                         Layout.alignment: Qt.AlignVCenter
-                        visible: VpnTunnels.stage === "prompt" || VpnTunnels.stage === "browser"
-                        text: VpnTunnels.stage === "browser" ? "open_in_browser" : "password"
-                        color: Colours.palette.m3primary
+                        text: "error"
+                        color: Colours.palette.m3onErrorContainer
                     }
 
                     ColumnLayout {
@@ -209,111 +297,37 @@ Item {
                         spacing: 0
 
                         StyledText {
-                            text: VpnTunnels.activeProfile
+                            text: `${session.profile} did not connect`
+                            color: Colours.palette.m3onErrorContainer
                             font.bold: true
                         }
 
                         StyledText {
                             Layout.fillWidth: true
-                            text: root.stageText()
-                            color: Colours.palette.m3onSurfaceVariant
+                            text: session.errorText
+                            color: Colours.palette.m3onErrorContainer
                             font.pointSize: Appearance.font.size.smaller
-                            elide: Text.ElideRight
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+
+                    IconButton {
+                        icon: "refresh"
+                        type: IconButton.Text
+                        activeColour: Colours.palette.m3onErrorContainer
+                        onClicked: {
+                            const name = session.profile;
+                            VpnTunnels.dismissError(name);
+                            VpnTunnels.startConnect(name);
                         }
                     }
 
                     IconButton {
                         icon: "close"
                         type: IconButton.Text
-                        onClicked: VpnTunnels.cancel()
+                        activeColour: Colours.palette.m3onErrorContainer
+                        onClicked: VpnTunnels.dismissError(session.profile)
                     }
-                }
-
-                // The second factor. Masked, and it never touches a command
-                // line: the value goes straight to the client's stdin.
-                RowLayout {
-                    Layout.fillWidth: true
-                    visible: VpnTunnels.stage === "prompt"
-                    spacing: Appearance.spacing.small
-
-                    StyledTextField {
-                        id: codeField
-
-                        Layout.fillWidth: true
-                        echoMode: TextInput.Password
-                        inputMethodHints: Qt.ImhHiddenText | Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
-                        placeholderText: `${VpnTunnels.promptLabel}…`
-                        font.family: Appearance.font.family.mono
-
-                        onVisibleChanged: if (visible)
-                            forceActiveFocus()
-
-                        onAccepted: {
-                            VpnTunnels.answer(text);
-                            text = "";
-                        }
-                    }
-
-                    IconButton {
-                        icon: "send"
-                        disabled: codeField.text.length === 0
-                        onClicked: codeField.accepted()
-                    }
-                }
-            }
-        }
-
-        // Login failed
-        Card {
-            visible: root.failed && !root.loggingIn
-            tint: Colours.palette.m3errorContainer
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.margins: Appearance.padding.normal
-                spacing: Appearance.spacing.normal
-
-                MaterialIcon {
-                    Layout.alignment: Qt.AlignVCenter
-                    text: "error"
-                    color: Colours.palette.m3onErrorContainer
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 0
-
-                    StyledText {
-                        text: `${VpnTunnels.activeProfile} did not connect`
-                        color: Colours.palette.m3onErrorContainer
-                        font.bold: true
-                    }
-
-                    StyledText {
-                        Layout.fillWidth: true
-                        text: VpnTunnels.errorText
-                        color: Colours.palette.m3onErrorContainer
-                        font.pointSize: Appearance.font.size.smaller
-                        wrapMode: Text.WordWrap
-                    }
-                }
-
-                IconButton {
-                    icon: "refresh"
-                    type: IconButton.Text
-                    activeColour: Colours.palette.m3onErrorContainer
-                    onClicked: {
-                        const name = VpnTunnels.activeProfile;
-                        VpnTunnels.dismissError();
-                        VpnTunnels.startConnect(name);
-                    }
-                }
-
-                IconButton {
-                    icon: "close"
-                    type: IconButton.Text
-                    activeColour: Colours.palette.m3onErrorContainer
-                    onClicked: VpnTunnels.dismissError()
                 }
             }
         }
@@ -386,7 +400,7 @@ Item {
 
         IconTextButton {
             Layout.fillWidth: true
-            visible: !root.loggingIn
+            visible: true
             icon: root.addingProfile ? "close" : "add"
             text: root.addingProfile ? "Hide add profile" : "Add profile"
             type: IconTextButton.Text
@@ -479,14 +493,14 @@ Item {
         StyledText {
             Layout.fillWidth: true
             Layout.topMargin: Appearance.spacing.small
-            visible: !root.loggingIn && root.available.length > 0
+            visible: root.available.length > 0
             text: VpnTunnels.connected ? "Also connect" : "Connect"
             color: Colours.palette.m3onSurfaceVariant
             font.pointSize: Appearance.font.size.smaller
         }
 
         Repeater {
-            model: root.loggingIn ? [] : root.available
+            model: root.available
 
             MenuRow {
                 required property var modelData
