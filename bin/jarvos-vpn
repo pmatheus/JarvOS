@@ -26,7 +26,7 @@
 # nothing here depends on a trial.
 #
 # Profiles: ~/.config/jarvos/vpn/profiles.json, a list of
-#   {name, vendor, server, [gateway], [user], [browser], [interface], [hip]}
+#   {name, vendor, server, [gateway], [user], [browser], [dnsDomains], [hip]}
 # Credentials never live there — see the refusal in load_profile().
 
 set -euo pipefail
@@ -38,6 +38,7 @@ unset _lib
 
 PROFILES="${JARVOS_VPN_PROFILES:-${XDG_CONFIG_HOME:-$HOME/.config}/jarvos/vpn/profiles.json}"
 VPN_BROWSER_HELPER="${JARVOS_VPN_BROWSER:-$(dirname "$(realpath "$0")")/jarvos-vpn-browser}"
+VPN_SCRIPT_HELPER="${JARVOS_VPN_SCRIPT:-$(dirname "$(realpath "$0")")/jarvos-vpnc-script}"
 
 # Passwords live in the login keyring, one entry per profile, never in the
 # profile file. secret-tool takes the value on stdin in both directions, which
@@ -231,11 +232,13 @@ cmd_remove() {
 }
 
 build_command() {
-    local profile="$1" vendor server gateway user browser iface hip
+    local profile="$1" vendor server gateway user browser dns_domains iface hip
     server="$(jq -r '.server // ""' <<<"$profile")"
     gateway="$(jq -r '.gateway // ""' <<<"$profile")"
     user="$(jq -r '.user // ""' <<<"$profile")"
     browser="$(jq -r '.browser // "default"' <<<"$profile")"
+    dns_domains="$(jq -r '(.dnsDomains // []) | if type == "array" then join(",") else error("dnsDomains must be an array") end' <<<"$profile")" ||
+        die "profile dnsDomains must be an array"
     hip="$(jq -r '.hip // ""' <<<"$profile")"
     # The interface is always ours. A profile may not override it: it is how
     # status and disconnect find this tunnel among several.
@@ -256,7 +259,13 @@ build_command() {
             # Hyprland. The supported browser callback stays in the open-source
             # CLI: launch-gui with callback data only feeds gpclient's local
             # socket and exits; it does not start the licensed GUI.
-            cmd=(sudo -E gpclient connect "$server")
+            cmd=(sudo -E)
+            if [[ -n "$dns_domains" ]]; then
+                [[ "$dns_domains" =~ ^[A-Za-z0-9._-]+(,[A-Za-z0-9._-]+)*$ ]] ||
+                    die "profile dnsDomains contains an invalid domain"
+                cmd+=(env "JARVOS_VPN_DNS_DOMAINS=$dns_domains")
+            fi
+            cmd+=(gpclient connect "$server" --script "$VPN_SCRIPT_HELPER")
             [[ -n "$gateway" ]] && cmd+=(--gateway "$gateway")
             [[ -n "$user" ]] && cmd+=(--user "$user")
             if [[ "$auth" == "sso" ]]; then

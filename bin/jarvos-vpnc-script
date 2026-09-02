@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Keep corporate DNS scoped to the profile's domains while delegating all
+# interface and route handling to gpclient's packaged vpnc-script.
+
+set -uo pipefail
+
+UPSTREAM_SCRIPT="${JARVOS_VPN_UPSTREAM_SCRIPT:-/usr/libexec/gpclient/vpnc-script}"
+DNS_DOMAINS="${JARVOS_VPN_DNS_DOMAINS:-}"
+
+if [[ ! -x "$UPSTREAM_SCRIPT" ]]; then
+    printf 'jarvos-vpnc-script: upstream script is not executable: %s\n' "$UPSTREAM_SCRIPT" >&2
+    exit 1
+fi
+
+if [[ -n "$DNS_DOMAINS" ]]; then
+    export CISCO_SPLIT_DNS="$DNS_DOMAINS"
+fi
+
+"$UPSTREAM_SCRIPT" "$@"
+status=$?
+
+if (( status == 0 )) && [[ -n "$DNS_DOMAINS" && "${reason:-}" == "connect" && -n "${TUNDEV:-}" ]]; then
+    resolvectl default-route "$TUNDEV" no
+fi
+
+exit "$status"

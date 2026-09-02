@@ -116,6 +116,27 @@ assert_status "$RUN_STATUS" 0 &&
     assert_contains "$FAKE_STATE/chrome-argv" "https://auth.example" &&
     pass_test
 
+start_test "the vpnc wrapper scopes corporate DNS to configured domains"
+cat >"$FAKE_BIN/upstream-vpnc-script" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "${CISCO_SPLIT_DNS:-}" >"$FAKE_STATE/split-dns"
+EOF
+cat >"$FAKE_BIN/resolvectl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >"$FAKE_STATE/resolvectl-argv"
+EOF
+chmod +x "$FAKE_BIN/upstream-vpnc-script" "$FAKE_BIN/resolvectl"
+export JARVOS_VPN_UPSTREAM_SCRIPT="$FAKE_BIN/upstream-vpnc-script"
+export JARVOS_VPN_DNS_DOMAINS="mte.example,trabalho.example"
+export reason=connect
+export TUNDEV=vpn-mte
+run_cmd jarvos-vpnc-script
+unset JARVOS_VPN_UPSTREAM_SCRIPT JARVOS_VPN_DNS_DOMAINS reason TUNDEV
+assert_status "$RUN_STATUS" 0 &&
+    assert_contains "$FAKE_STATE/split-dns" "mte.example,trabalho.example" &&
+    assert_contains "$FAKE_STATE/resolvectl-argv" "default-route vpn-mte no" &&
+    pass_test
+
 start_test "Fortinet dispatches to openconnect with its protocol"
 run_cmd jarvos-vpn connect client-a --dry-run
 assert_status "$RUN_STATUS" 0 &&
@@ -278,11 +299,17 @@ assert_status "$RUN_STATUS" 0 &&
     pass_test
 
 start_test "a GlobalProtect profile pins its configured gateway"
-jq 'map(if .name == "mte" then . + {"gateway": "primary.example"} else . end)' "$PROFILES" >"$PROFILES.tmp"
+jq 'map(if .name == "mte" then . + {"gateway": "primary.example", "dnsDomains": ["mte.example", "trabalho.example"]} else . end)' "$PROFILES" >"$PROFILES.tmp"
 mv "$PROFILES.tmp" "$PROFILES"
 run_cmd jarvos-vpn connect mte --dry-run
 assert_status "$RUN_STATUS" 0 &&
     assert_stdout_contains "$RUN_OUT" "--gateway primary.example" &&
+    pass_test
+
+start_test "a GlobalProtect profile passes its split DNS domains to the wrapper"
+assert_stdout_contains "$RUN_OUT" "JARVOS_VPN_DNS_DOMAINS=mte.example,trabalho.example" &&
+    assert_stdout_contains "$RUN_OUT" "--script" &&
+    assert_stdout_contains "$RUN_OUT" "jarvos-vpnc-script" &&
     pass_test
 
 start_test "a Fortinet SSO profile uses openconnect's external browser"
