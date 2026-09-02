@@ -100,7 +100,7 @@ Singleton {
         if (root.sessions[name])
             return root.sessions[name];
 
-        const session = VpnSession.createObject(root, { profile: name });
+        const session = vpnSessionComponent.createObject(root, { profile: name });
         if (!session)
             return null;
 
@@ -132,17 +132,6 @@ Singleton {
     }
 
     function startConnect(name: string): void {
-        const profile = root.profileFor(name);
-        if (profile?.vendor === "globalprotect") {
-            // GlobalProtect's Entra ID flow is owned by GP Connect's embedded
-            // WebKit view. Launching gpclient connect from a QuickShell Process
-            // falls back to the external callback helper and loses its auth
-            // listener before the browser handoff completes.
-            Quickshell.execDetached(["gpclient", "launch-gui"]);
-            root.refresh();
-            return;
-        }
-
         const session = root._addSession(name);
         if (!session)
             return;
@@ -427,14 +416,16 @@ Singleton {
                     // Start the client first, then hand it the password. Doing
                     // both at once raced: the write landed before stdin was open
                     // and was lost.
-                    // Own scope unit: the shell's service is KillMode=control-group,
-                    // so a plain child would die with every quickshell restart.
+                    // A transient service survives QuickShell reloads. --pipe keeps
+                    // stdin available for password profiles without forcing a PTY;
+                    // GlobalProtect's external browser callback does not need one.
                     conn.command = [
                         "systemd-run",
                         "--user",
-                        "--scope",
                         "--quiet",
                         "--collect",
+                        "--wait",
+                        "--pipe",
                         `--unit=${root._safeUnitName(session.profile)}`,
                         "--",
                         "sh",
@@ -496,6 +487,12 @@ Singleton {
                 }
             }
         }
+    }
+
+    Component {
+        id: vpnSessionComponent
+
+        VpnSession {}
     }
 
     Timer {

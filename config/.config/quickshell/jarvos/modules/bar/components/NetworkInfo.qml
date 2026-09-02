@@ -20,11 +20,13 @@ StyledRect {
     property string externalIp: "..."
     property string internalIp: "..."
 
-    // The real VPN tunnel — GlobalProtect today, openconnect later. Distinct from
-    // vpnConnected, which is Tailscale's BackendState and drives the chip above.
-    property string tunnelIp: ""
-    property string tunnelName: ""
-    readonly property bool tunnelUp: tunnelIp !== ""
+    // Distinct from vpnConnected, which is Tailscale's BackendState.
+    readonly property var tunnels: VpnTunnels.tunnels ?? []
+    readonly property bool tunnelUp: tunnels.length > 0
+    readonly property string tunnelLabel: tunnels.map(t => {
+        const name = t.profile || t.iface || "vpn";
+        return `${name} ${t.ip}`;
+    }).join(" · ")
 
     // Tailscale details, parsed from the existing `tailscale status --json` poll.
     property string tsIp4: ""
@@ -63,52 +65,7 @@ StyledRect {
         triggeredOnStart: true
         onTriggered: {
             vpnCheckProc.running = true;
-            tunnelProc.running = true;
-        }
-    }
-
-    // The VPN chip reports the real tunnel, not Tailscale. Tailscale has its own
-    // chip and its own address; before this, both were driven by BackendState,
-    // so the key said "VPN" whenever Tailscale was up and said nothing at all
-    // about GlobalProtect.
-    //
-    // Matched on link kind rather than name: GlobalProtect is tun0 today, but
-    // openconnect, WireGuard and a second tunnel all name themselves differently
-    // and a name match would miss every one of them. tailscale0 is the same kind,
-    // hence the explicit exclusion.
-    Process {
-        id: tunnelProc
-
-        command: ["ip", "-j", "-d", "addr", "show"]
-        environment: ({
-                LANG: "C.UTF-8",
-                LC_ALL: "C.UTF-8"
-            })
-        stdout: StdioCollector {
-            onStreamFinished: {
-                let name = "";
-                let ip = "";
-                try {
-                    for (const link of JSON.parse(text)) {
-                        if (link.ifname === "tailscale0")
-                            continue;
-                        const kind = link.linkinfo?.info_kind ?? "";
-                        if (!["tun", "tap", "wireguard", "ppp"].includes(kind))
-                            continue;
-                        const addr = link.addr_info?.find(a => a.family === "inet");
-                        if (!addr)
-                            continue;
-                        name = link.ifname;
-                        ip = addr.local;
-                        break;
-                    }
-                } catch (e) {
-                    // A malformed listing means unknown, not disconnected: leaving
-                    // the previous address up would claim a tunnel we cannot see.
-                }
-                root.tunnelName = name;
-                root.tunnelIp = ip;
-            }
+            VpnTunnels.refresh();
         }
     }
 
@@ -257,7 +214,7 @@ StyledRect {
 
                 StyledText {
                     Layout.alignment: Qt.AlignVCenter
-                    text: root.tunnelUp ? root.tunnelIp : "OFF"
+                    text: root.tunnelUp ? root.tunnelLabel : "OFF"
                     font.pointSize: Appearance.font.size.smaller
                     font.family: Appearance.font.family.mono
                     font.bold: true

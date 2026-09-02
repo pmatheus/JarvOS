@@ -10,9 +10,9 @@
 # already implements, so a profile names a vendor and this dispatches to the
 # binary that speaks it:
 #
-#   globalprotect  gpclient   — the GP Connect GUI owns the embedded webview
-#                               required by Entra ID / SAML, then runs
-#                               openconnect underneath
+#   globalprotect  gpclient   — the open-source CLI delegates Entra ID / SAML
+#                               to the configured browser, then runs openconnect
+#                               underneath
 #   fortinet       openconnect --protocol=fortinet
 #   anyconnect     openconnect --protocol=anyconnect   (Cisco, ocserv)
 #   f5             openconnect --protocol=f5
@@ -37,6 +37,7 @@ if [[ -r "$_lib" ]]; then source "$_lib"; else source /usr/share/jarvos/lib/jarv
 unset _lib
 
 PROFILES="${JARVOS_VPN_PROFILES:-${XDG_CONFIG_HOME:-$HOME/.config}/jarvos/vpn/profiles.json}"
+VPN_BROWSER_HELPER="${JARVOS_VPN_BROWSER:-$(dirname "$(realpath "$0")")/jarvos-vpn-browser}"
 
 # Passwords live in the login keyring, one entry per profile, never in the
 # profile file. secret-tool takes the value on stdin in both directions, which
@@ -230,10 +231,12 @@ cmd_remove() {
 }
 
 build_command() {
-    local profile="$1" vendor server user browser iface
+    local profile="$1" vendor server gateway user browser iface hip
     server="$(jq -r '.server // ""' <<<"$profile")"
+    gateway="$(jq -r '.gateway // ""' <<<"$profile")"
     user="$(jq -r '.user // ""' <<<"$profile")"
     browser="$(jq -r '.browser // "default"' <<<"$profile")"
+    hip="$(jq -r '.hip // ""' <<<"$profile")"
     # The interface is always ours. A profile may not override it: it is how
     # status and disconnect find this tunnel among several.
     iface="$(iface_for "$(jq -r '.name' <<<"$profile")")"
@@ -249,13 +252,22 @@ build_command() {
     local -a cmd
     case "$vendor" in
         globalprotect)
-            # The CLI's external-browser mode hands the callback to the GUI
-            # helper. That helper needs the CLI to remain alive and is fragile
-            # when launched from a non-TTY Process. GP Connect's own webview
-            # handles Entra ID/SAML and owns the resulting tunnel reliably.
-            # Its portal is persisted by GP Connect, so server remains profile
-            # metadata for the menu and status association.
-            cmd=(gpclient launch-gui)
+            # The bundled WebKit view turns black when it receives focus under
+            # Hyprland. The supported browser callback stays in the open-source
+            # CLI: launch-gui with callback data only feeds gpclient's local
+            # socket and exits; it does not start the licensed GUI.
+            cmd=(sudo -E gpclient connect "$server")
+            [[ -n "$gateway" ]] && cmd+=(--gateway "$gateway")
+            [[ -n "$user" ]] && cmd+=(--user "$user")
+            if [[ "$auth" == "sso" ]]; then
+                # "default" means a clean Chrome context for GlobalProtect.
+                # This prevents an existing Entra session from skipping the
+                # credential page and landing immediately on Palo Alto's ACS.
+                [[ "$browser" == "default" ]] && browser="$VPN_BROWSER_HELPER"
+                cmd+=(--browser "$browser")
+            fi
+            cmd+=(--interface "$iface")
+            [[ -n "$hip" ]] && cmd+=(--hip "$hip")
             ;;
         checkpoint)
             command -v snx-rs >/dev/null 2>&1 ||
@@ -303,11 +315,6 @@ cmd_connect() {
     if [[ -n "$dry" ]]; then
         printf '%s\n' "$line"
         return 0
-    fi
-
-    if [[ "$vendor" == "globalprotect" ]]; then
-        printf 'Opening GP Connect for %s.\n' "$name"
-        exec gpclient launch-gui
     fi
 
     printf 'Connecting %s…\n' "$name"
