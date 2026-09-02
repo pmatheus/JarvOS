@@ -404,6 +404,29 @@ run_cmd() {
     RUN_STATUS="$status"
 }
 
+# Same, with something on stdin. Anything that takes a secret must take it this
+# way rather than as an argument — argv is readable by every process on the box
+# — so the tests have to be able to feed one.
+run_cmd_stdin() {
+    local input="$1" cmd="$2"
+    shift 2
+    local out status
+    set +e
+    out="$(printf '%s' "$input" | env \
+        HOME="$FAKE_HOME" \
+        PATH="$FAKE_BIN:$REPO_ROOT/bin:$PATH" \
+        XDG_STATE_HOME="$FAKE_HOME/.local/state" \
+        FAKE_STATE="$FAKE_STATE" \
+        JARVOS_PATH="${JARVOS_PATH:-$FAKE_BASE}" \
+        "$REPO_ROOT/bin/$cmd" "$@" 2>&1)"
+    status=$?
+    set -e
+    # shellcheck disable=SC2034
+    RUN_OUT="$out"
+    # shellcheck disable=SC2034
+    RUN_STATUS="$status"
+}
+
 # Write a file under the fake home, creating parents.
 home_file() {
     local rel="$1"

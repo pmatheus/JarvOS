@@ -229,27 +229,64 @@ StyledRect {
             opacity: 0.15
         }
 
-        // VPN icon
-        MaterialIcon {
-            text: root.tunnelUp ? "vpn_key" : "vpn_key_off"
-            color: root.tunnelUp ? Colours.palette.m3primary : Qt.alpha(root.colour, 0.4)
+        // VPN chip — icon + tunnel address, click opens the VPN menu
+        Item {
+            id: vpnChip
 
-            Behavior on color {
-                ColorAnimation { duration: 300 }
-            }
-        }
-
-        // VPN label
-        StyledText {
             Layout.alignment: Qt.AlignVCenter
-            text: root.tunnelUp ? root.tunnelIp : "OFF"
-            font.pointSize: Appearance.font.size.smaller
-            font.family: Appearance.font.family.mono
-            font.bold: true
-            color: root.tunnelUp ? Colours.palette.m3primary : Qt.alpha(root.colour, 0.4)
+            implicitWidth: vpnRow.implicitWidth
+            implicitHeight: vpnRow.implicitHeight
 
-            Behavior on color {
-                ColorAnimation { duration: 300 }
+            RowLayout {
+                id: vpnRow
+
+                anchors.centerIn: parent
+                spacing: Appearance.spacing.small
+
+                MaterialIcon {
+                    Layout.alignment: Qt.AlignVCenter
+                    text: root.tunnelUp ? "vpn_key" : "vpn_key_off"
+                    color: root.tunnelUp ? Colours.palette.m3primary : Qt.alpha(root.colour, 0.4)
+
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: 300
+                        }
+                    }
+                }
+
+                StyledText {
+                    Layout.alignment: Qt.AlignVCenter
+                    text: root.tunnelUp ? root.tunnelIp : "OFF"
+                    font.pointSize: Appearance.font.size.smaller
+                    font.family: Appearance.font.family.mono
+                    font.bold: true
+                    color: root.tunnelUp ? Colours.palette.m3primary : Qt.alpha(root.colour, 0.4)
+
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: 300
+                        }
+                    }
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                hoverEnabled: true
+                onClicked: {
+                    const popouts = root.bar?.popouts;
+                    if (!popouts)
+                        return;
+                    if (popouts.hasCurrent && popouts.currentName === "vpn") {
+                        popouts.hasCurrent = false;
+                    } else {
+                        popouts.currentName = "vpn";
+                        popouts.currentCenter = vpnChip.mapToItem(root.bar, vpnChip.width / 2, 0).x;
+                        popouts.hasCurrent = true;
+                    }
+                }
             }
         }
 

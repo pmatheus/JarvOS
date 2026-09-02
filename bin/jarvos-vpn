@@ -38,6 +38,17 @@ unset _lib
 
 PROFILES="${JARVOS_VPN_PROFILES:-${XDG_CONFIG_HOME:-$HOME/.config}/jarvos/vpn/profiles.json}"
 
+# Passwords live in the login keyring, one entry per profile, never in the
+# profile file. secret-tool takes the value on stdin in both directions, which
+# is the whole point: an argument is readable by every process on the machine
+# through ps, and a customer's VPN password is exactly the thing that must not
+# be.
+KEYRING_SERVICE=jarvos-vpn
+
+keyring_store() { secret-tool store --label="JarvOS VPN: $1" service "$KEYRING_SERVICE" profile "$1"; }
+keyring_lookup() { secret-tool lookup service "$KEYRING_SERVICE" profile "$1" 2>/dev/null; }
+keyring_clear() { secret-tool clear service "$KEYRING_SERVICE" profile "$1" 2>/dev/null || true; }
+
 # Vendor names as people say them, not as binaries spell them. A Palo Alto
 # portal is usually called "Panorama" by the people running it.
 canonical_vendor() {
@@ -64,37 +75,43 @@ read_profiles() {
     jq -e . "$PROFILES" 2>/dev/null || die "cannot read profiles: $PROFILES is not valid JSON"
 }
 
-# The live tunnel, if any. Matched on link kind rather than name because every
-# client names its interface differently; tailscale0 is the same kind and is
-# excluded because it is not a VPN in this sense and has its own indicator.
-tunnel_json() {
+# Every profile connects on its own interface, named after it, so several
+# tunnels can be up at once and each can be told apart, reported and torn down
+# on its own. Kernel interface names are capped at 15 characters.
+iface_for() { printf 'vpn-%s' "${1:0:11}"; }
+
+# Every live tunnel, tagged with the profile that owns it where the interface
+# name says so. Matched on link kind rather than name because clients that did
+# not go through this wrapper name their interfaces however they like;
+# tailscale0 is the same kind and excluded because it has its own indicator.
+tunnels_json() {
     ip -j -d addr show 2>/dev/null |
         jq -c '[.[]
             | select(.ifname != "tailscale0")
             | select((.linkinfo.info_kind // "") | IN("tun","tap","wireguard","ppp"))
-            | {name: .ifname, ip: (.addr_info[]? | select(.family=="inet") | .local)}
-        ] | .[0] // null' 2>/dev/null || echo null
+            | select(any(.addr_info[]?; .family=="inet"))
+            | {iface: .ifname,
+               ip: (.addr_info[] | select(.family=="inet") | .local),
+               profile: (if (.ifname|startswith("vpn-")) then .ifname[4:] else null end)}
+        ]' 2>/dev/null || echo '[]'
 }
 
 cmd_status() {
-    local tun
-    tun="$(tunnel_json)"
+    local tuns n
+    tuns="$(tunnels_json)"
+    n="$(jq 'length' <<<"$tuns")"
 
     if [[ "${1-}" == "--json" ]]; then
-        if [[ "$tun" == "null" ]]; then
-            echo '{"connected":false}'
-        else
-            jq -nc --argjson t "$tun" '{connected:true, interface:$t.name, address:$t.ip}'
-        fi
-        [[ "$tun" != "null" ]]
+        jq -c --argjson t "$tuns" -n '{connected: ($t|length>0), tunnels: $t}'
+        [[ "$n" -gt 0 ]]
         return
     fi
 
-    [[ "$tun" == "null" ]] && {
+    [[ "$n" -gt 0 ]] || {
         echo "disconnected"
         return 1
     }
-    printf 'connected: %s on %s\n' "$(jq -r .ip <<<"$tun")" "$(jq -r .name <<<"$tun")"
+    jq -r '.[] | "connected: \(.ip) on \(.iface)\(if .profile then " (\(.profile))" else "" end)"' <<<"$tuns"
 }
 
 cmd_list() {
@@ -139,30 +156,104 @@ load_profile() {
     printf '%s' "$profile"
 }
 
+cmd_add() {
+    local name="" vendor="" server="" user="" auth="sso" browser="default"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --name) name="${2-}"; shift 2 ;;
+            --vendor) vendor="${2-}"; shift 2 ;;
+            --server) server="${2-}"; shift 2 ;;
+            --user) user="${2-}"; shift 2 ;;
+            --auth) auth="${2-}"; shift 2 ;;
+            --browser) browser="${2-}"; shift 2 ;;
+            # Deliberately unsupported. People reach for it, and an argument is
+            # readable through ps by every process on the box, so the flag must
+            # not exist rather than be discouraged. The value is not echoed.
+            --password | --passwd)
+                die "passwords are not taken as arguments; add the profile, then: jarvos-vpn set-password $name"
+                ;;
+            *) die "unknown option: $1" ;;
+        esac
+    done
+
+    [[ -n "$name" ]] || die "usage: jarvos-vpn add --name N --vendor V --server S [--user U] [--auth sso|password]"
+    [[ -n "$server" ]] || die "a profile needs --server"
+    [[ "$auth" == "sso" || "$auth" == "password" ]] || die "auth must be sso or password"
+
+    local canon
+    canon="$(canonical_vendor "$vendor")" || die "unsupported vendor '$vendor' — supported: $SUPPORTED"
+
+    local profiles
+    profiles="$(read_profiles)"
+    jq -e --arg n "$name" 'any(.[]; .name == $n)' <<<"$profiles" >/dev/null &&
+        die "profile '$name' already exists (jarvos-vpn remove $name first)"
+
+    mkdir -p "$(dirname "$PROFILES")"
+    jq --arg n "$name" --arg v "$canon" --arg s "$server" \
+        --arg u "$user" --arg a "$auth" --arg b "$browser" \
+        '. + [{name:$n, vendor:$v, server:$s, auth:$a, browser:$b}
+              + (if $u == "" then {} else {user:$u} end)]' \
+        <<<"$profiles" >"$PROFILES.tmp" && mv "$PROFILES.tmp" "$PROFILES"
+
+    printf 'Added %s (%s, %s)\n' "$name" "$canon" "$auth"
+    [[ "$auth" == "password" ]] && printf 'Now store the password: jarvos-vpn set-password %s\n' "$name"
+    return 0
+}
+
+cmd_set_password() {
+    local name="${1-}"
+    [[ -n "$name" ]] || die "usage: jarvos-vpn set-password <profile>   (reads the password from stdin)"
+    load_profile "$name" >/dev/null
+    command -v secret-tool >/dev/null 2>&1 || die "secret-tool is not installed (pacman -S libsecret)"
+    keyring_store "$name"
+    printf 'Stored the password for %s in the login keyring.\n' "$name"
+}
+
+cmd_remove() {
+    local name="${1-}"
+    [[ -n "$name" ]] || die "usage: jarvos-vpn remove <profile>"
+    load_profile "$name" >/dev/null
+
+    local profiles
+    profiles="$(read_profiles)"
+    jq --arg n "$name" 'map(select(.name != $n))' <<<"$profiles" >"$PROFILES.tmp" &&
+        mv "$PROFILES.tmp" "$PROFILES"
+    keyring_clear "$name"
+    printf 'Removed %s and its keyring entry.\n' "$name"
+}
+
 build_command() {
     local profile="$1" vendor server gateway user browser iface hip
     server="$(jq -r '.server // ""' <<<"$profile")"
     gateway="$(jq -r '.gateway // ""' <<<"$profile")"
     user="$(jq -r '.user // ""' <<<"$profile")"
     browser="$(jq -r '.browser // "default"' <<<"$profile")"
-    iface="$(jq -r '.interface // ""' <<<"$profile")"
     hip="$(jq -r '.hip // ""' <<<"$profile")"
+    # The interface is always ours. A profile may not override it: it is how
+    # status and disconnect find this tunnel among several.
+    iface="$(iface_for "$(jq -r '.name' <<<"$profile")")"
 
     [[ -n "$server" ]] || die "profile has no server"
 
     vendor="$(canonical_vendor "$(jq -r '.vendor // ""' <<<"$profile")")" ||
         die "unsupported vendor '$(jq -r '.vendor' <<<"$profile")' — supported: $SUPPORTED"
 
+    local auth
+    auth="$(jq -r '.auth // "sso"' <<<"$profile")"
+
     local -a cmd
     case "$vendor" in
         globalprotect)
             # gpclient wraps openconnect and drives the SAML exchange through
             # gpauth. --browser keeps that in the user's own browser instead of
-            # the licensed GUI's embedded one.
-            cmd=(sudo gpclient connect "$server" --browser "$browser")
+            # the licensed GUI's embedded one, which is what makes an EntraID
+            # portal work without the paid component.
+            cmd=(sudo gpclient connect "$server")
+            [[ "$auth" == "sso" ]] && cmd+=(--browser "$browser")
+            [[ "$auth" == "password" ]] && cmd+=(--passwd-on-stdin)
             [[ -n "$gateway" ]] && cmd+=(--gateway "$gateway")
             [[ -n "$user" ]] && cmd+=(--user "$user")
-            [[ -n "$iface" ]] && cmd+=(--interface "$iface")
+            cmd+=(--interface "$iface")
             [[ -n "$hip" ]] && cmd+=(--hip "$hip")
             ;;
         checkpoint)
@@ -175,8 +266,12 @@ build_command() {
             local proto="$vendor"
             [[ "$vendor" == "juniper" ]] && proto=nc
             cmd=(sudo openconnect "--protocol=$proto" "$server")
+            # openconnect drives SAML through an external browser too, so an
+            # EntraID Fortinet portal needs no vendor client either.
+            [[ "$auth" == "sso" ]] && cmd+=("--external-browser=$browser")
+            [[ "$auth" == "password" ]] && cmd+=(--passwd-on-stdin)
             [[ -n "$user" ]] && cmd+=(--user "$user")
-            [[ -n "$iface" ]] && cmd+=(--interface "$iface")
+            cmd+=("--interface=$iface")
             ;;
     esac
 
@@ -189,9 +284,17 @@ cmd_connect() {
     shift
     [[ "${1-}" == "--dry-run" ]] && dry=1
 
-    local profile line
+    local profile line auth
     profile="$(load_profile "$name")"
+    auth="$(jq -r '.auth // "sso"' <<<"$profile")"
     line="$(build_command "$profile")"
+
+    # Checked before connecting rather than after: openconnect would otherwise
+    # sit at a password prompt inside a terminal the menu opened, which reads
+    # as a hang.
+    if [[ "$auth" == "password" ]] && ! keyring_lookup "$name" >/dev/null; then
+        die "no password stored for '$name' — run: jarvos-vpn set-password $name"
+    fi
 
     if [[ -n "$dry" ]]; then
         printf '%s\n' "$line"
@@ -199,28 +302,68 @@ cmd_connect() {
     fi
 
     printf 'Connecting %s…\n' "$name"
-    # Deliberately word-split: build_command emits a command line, and every
-    # component in it comes from a validated profile field.
+
+    if [[ "$auth" == "password" ]]; then
+        # The secret goes down a pipe into the client's stdin — never an
+        # argument, never a file, never printed.
+        #
+        # The `cat /dev/tty` after it is what makes 2FA work. A portal that
+        # wants a token asks for it on the same stdin, and a plain pipe is
+        # exhausted by then: openconnect reads EOF and dies with "fgets
+        # (stdin): Inappropriate ioctl for device". Relaying the terminal
+        # after the password means the token prompt reaches the person at the
+        # keyboard.
+        if [[ -r /dev/tty ]]; then
+            {
+                keyring_lookup "$name"
+                printf '\n'
+                cat /dev/tty
+            } | eval "$line"
+        else
+            die "connecting needs a terminal for the 2FA prompt — run this from a terminal, or use the VPN menu, which opens one"
+        fi
+        return
+    fi
+
+    printf 'A browser will open for you to sign in.\n'
     # shellcheck disable=SC2086
     eval "$line"
 }
 
 cmd_disconnect() {
-    local tun
-    tun="$(tunnel_json)"
-    [[ "$tun" == "null" ]] && {
+    local name="${1-}" tuns n
+    tuns="$(tunnels_json)"
+    n="$(jq 'length' <<<"$tuns")"
+
+    [[ "$n" -gt 0 ]] || {
         echo "already disconnected"
         return 0
     }
 
-    # gpclient owns its own session and must be told, rather than having its
-    # interface pulled from under it.
-    if command -v gpclient >/dev/null 2>&1 && pgrep -x gpclient >/dev/null 2>&1; then
-        sudo gpclient disconnect
-        return
+    # With several tunnels up, "disconnect" alone is ambiguous and must not
+    # guess — tearing down the wrong case's VPN mid-work is worse than an
+    # error. With exactly one, it is obvious which.
+    if [[ -z "$name" ]]; then
+        if [[ "$n" -eq 1 ]]; then
+            name="$(jq -r '.[0].profile // empty' <<<"$tuns")"
+        else
+            die "several tunnels are up — say which: jarvos-vpn disconnect <profile>  ($(jq -r '[.[].profile // .[].iface] | join(", ")' <<<"$tuns"))"
+        fi
     fi
-    sudo pkill -TERM -x openconnect 2>/dev/null || true
-    sudo pkill -TERM -x snx-rs 2>/dev/null || true
+
+    local iface
+    iface="$(iface_for "$name")"
+    jq -e --arg i "$iface" 'any(.[]; .iface == $i)' <<<"$tuns" >/dev/null ||
+        die "no tunnel up for '$name'"
+
+    # Each client was started with this interface name on its command line,
+    # which is how the right process — and only that one — is found.
+    if pgrep -f -- "gpclient .*-i $iface|gpclient .*--interface $iface" >/dev/null 2>&1; then
+        sudo gpclient disconnect
+    else
+        sudo pkill -TERM -f -- "--interface=$iface" 2>/dev/null || true
+    fi
+    printf 'Disconnected %s\n' "$name"
 }
 
 case "${1-}" in
@@ -228,6 +371,9 @@ case "${1-}" in
     status) shift; cmd_status "$@" ;;
     connect) shift; cmd_connect "$@" ;;
     disconnect) shift; cmd_disconnect "$@" ;;
+    add) shift; cmd_add "$@" ;;
+    set-password) shift; cmd_set_password "$@" ;;
+    remove) shift; cmd_remove "$@" ;;
     -h | --help) sed -n '2,32p' "$0" ;;
-    *) die "usage: jarvos-vpn list|status|connect <profile>|disconnect" ;;
+    *) die "usage: jarvos-vpn list|status|connect <profile>|disconnect|add|set-password|remove" ;;
 esac
