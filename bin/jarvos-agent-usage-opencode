@@ -28,8 +28,10 @@ def main():
     today_sessions = 0
     total_messages = 0
     today_messages = 0
-    active_dates = set()
-    model_usage = {}
+    today_token_total = 0
+    today_tokens_by_model: dict[str, int] = {}
+    active_dates: set[str] = set()
+    model_usage: dict[str, dict[str, int]] = {}
 
     if db_path.is_file():
         try:
@@ -41,33 +43,102 @@ def main():
             if row:
                 total_sessions = row[0]
 
-            cursor.execute("SELECT count(*) FROM message")
-            row = cursor.fetchone()
-            if row:
-                total_messages = row[0]
-
             # Recent sessions
             cursor.execute("SELECT time_created FROM session WHERE time_created IS NOT NULL")
             for (tc,) in cursor.fetchall():
                 try:
-                    # timestamp could be ms or ISO string
                     if isinstance(tc, (int, float)):
                         ts = float(tc) / 1000.0 if float(tc) > 10_000_000_000 else float(tc)
                         d = dt.datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
                     else:
                         d = str(tc)[:10]
                     active_dates.add(d)
-                    if d in recent_by_day:
-                        recent_by_day[d] += 1
                     if d == today_str:
                         today_sessions += 1
                 except Exception:
                     continue
+
+            # Assistant messages and tokens
+            cursor.execute("SELECT time_created, data FROM message WHERE data IS NOT NULL")
+            for tc, raw in cursor.fetchall():
+                try:
+                    entry = json.loads(raw)
+                    if not isinstance(entry, dict) or entry.get("role") != "assistant":
+                        continue
+                    tokens = entry.get("tokens") or {}
+                    cache = tokens.get("cache") or {}
+                    inp = int(tokens.get("input") or 0)
+                    out = int(tokens.get("output") or 0) + int(tokens.get("reasoning") or 0)
+                    c_read = int(cache.get("read") or 0)
+                    c_write = int(cache.get("write") or 0)
+                    tot = int(tokens.get("total") or (inp + out + c_read + c_write))
+                    if tot <= 0:
+                        continue
+
+                    if isinstance(tc, (int, float)):
+                        ts = float(tc) / 1000.0 if float(tc) > 10_000_000_000 else float(tc)
+                        d = dt.datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+                    else:
+                        d = str(tc)[:10]
+
+                    model = str(entry.get("modelID") or "opencode").rstrip("/").split("/")[-1]
+                    active_dates.add(d)
+                    total_messages += 1
+
+                    bucket = model_usage.setdefault(model, {
+                        "inputTokens": 0,
+                        "outputTokens": 0,
+                        "cacheReadInputTokens": 0,
+                        "cacheCreationInputTokens": 0
+                    })
+                    bucket["inputTokens"] += inp
+                    bucket["outputTokens"] += out
+                    bucket["cacheReadInputTokens"] += c_read
+                    bucket["cacheCreationInputTokens"] += c_write
+
+                    if d in recent_by_day:
+                        recent_by_day[d] += tot
+
+                    if d == today_str:
+                        today_messages += 1
+                        today_token_total += tot
+                        today_tokens_by_model[model] = today_tokens_by_model.get(model, 0) + tot
+                except Exception:
+                    continue
+
             conn.close()
         except Exception:
             pass
 
     recent_days = [{"date": d, "messageCount": recent_by_day[d]} for d in dates]
+
+    # Check for recent rate limits in opencode.log
+    log_file = Path(os.path.expanduser("~/.local/share/opencode/log/opencode.log"))
+    is_rate_limited = False
+    reset_at_str = ""
+    if log_file.is_file():
+        try:
+            with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+                lines = f.readlines()
+            for line in reversed(lines[-200:]):
+                if "level=ERROR" in line and any(k in line.lower() for k in ("rate_limit", "429", "quota", "too many requests")):
+                    is_rate_limited = True
+                    break
+        except Exception:
+            pass
+
+    limits = [
+        {
+            "label": "Session (5-hour)",
+            "percent": 1.0 if is_rate_limited else 0.0,
+            "resetsAt": reset_at_str
+        },
+        {
+            "label": "Weekly (7-day)",
+            "percent": 1.0 if is_rate_limited else 0.0,
+            "resetsAt": reset_at_str
+        }
+    ]
 
     record = {
         "schemaVersion": 1,
@@ -75,36 +146,18 @@ def main():
         "name": AGENT_NAME,
         "ready": True,
         "hasLocalStats": True,
-        "tierLabel": "Go ($8/mo)",
+        "tierLabel": "Rate Limited" if is_rate_limited else "Go ($8/mo)",
         "todayPrompts": today_messages,
         "todaySessions": today_sessions,
-        "todayTotalTokens": 0,
-        "todayTokensByModel": {},
+        "todayTotalTokens": today_token_total,
+        "todayTokensByModel": today_tokens_by_model,
         "recentDays": recent_days,
         "totalPrompts": total_messages,
         "totalSessions": total_sessions,
         "activeDays": len(active_dates),
         "activeDates": sorted(list(active_dates)),
-        "modelUsage": {
-            "deepseek-v4": {
-                "inputTokens": 0,
-                "outputTokens": 0,
-                "cacheReadInputTokens": 0,
-                "cacheCreationInputTokens": 0
-            }
-        },
-        "limits": [
-            {
-                "label": "Session (5-hour)",
-                "percent": 0.05,
-                "resetsAt": ""
-            },
-            {
-                "label": "Weekly (7-day)",
-                "percent": 0.20,
-                "resetsAt": ""
-            }
-        ]
+        "modelUsage": model_usage,
+        "limits": limits
     }
     print(json.dumps(record, indent=2))
 
