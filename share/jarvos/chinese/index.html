@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JarvOS 华语 • Chinese Field Scratchpad</title>
+  <style>
+    :root {
+      --bg: #121318;
+      --surface: #1b1d24;
+      --surface-card: #232630;
+      --surface-card-hover: #2a2e3b;
+      --border: #323746;
+      --primary: #78a9ff;
+      --primary-dim: #26427a;
+      --primary-container: #1b3564;
+      --secondary: #a3c9fe;
+      --text: #e1e3ec;
+      --text-dim: #9aa1b2;
+      --text-muted: #6b7280;
+      --accent-tonal: #ffb77d;
+      --success: #67d695;
+      --tag-bg: #2e3445;
+      --radius: 12px;
+      --radius-sm: 6px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans CJK SC", "Noto Sans CJK TC", sans-serif;
+      padding: 24px;
+      line-height: 1.5;
+      overflow-y: overlay;
+    }
+
+    header {
+      max-width: 960px;
+      margin: 0 auto 24px auto;
+    }
+
+    .title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .stats {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      background: var(--surface);
+      padding: 4px 12px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+    }
+
+    p.subtitle {
+      color: var(--text-dim);
+      font-size: 0.95rem;
+      margin-bottom: 16px;
+    }
+
+    .controls-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .search-box {
+      flex: 1;
+      min-width: 260px;
+      position: relative;
+    }
+
+    .search-box input {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 16px;
+      color: var(--text);
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .search-box input:focus {
+      border-color: var(--primary);
+    }
+
+    .category-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .chip {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s;
+    }
+
+    .chip:hover {
+      background: var(--surface-card);
+      color: var(--text);
+    }
+
+    .chip.active {
+      background: var(--primary);
+      color: #0d1e38;
+      border-color: var(--primary);
+      font-weight: 600;
+    }
+
+    main {
+      max-width: 960px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: transform 0.15s, border-color 0.2s, background 0.2s;
+    }
+
+    .card:hover {
+      background: var(--surface-card-hover);
+      border-color: #434c62;
+    }
+
+    .card.mastered {
+      border-left: 4px solid var(--success);
+    }
+
+    .card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .english-title {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .category-badge {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--tag-bg);
+      color: var(--secondary);
+      white-space: nowrap;
+    }
+
+    .chinese-display {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .hanzi-box {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: 2px;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .hanzi-traditional {
+      font-size: 1.25rem;
+      color: var(--accent-tonal);
+      font-weight: 400;
+    }
+
+    .pinyin-box {
+      font-size: 1.1rem;
+      color: var(--primary);
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-weight: 500;
+    }
+
+    .audio-btn {
+      background: var(--primary-container);
+      color: var(--primary);
+      border: 1px solid #3b5a94;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 500;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    .audio-btn:hover {
+      background: #2b4f91;
+      color: #fff;
+    }
+
+    .audio-btn:active {
+      transform: scale(0.96);
+    }
+
+    .breakdown-table {
+      background: var(--surface);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      border: 1px solid #282d3b;
+    }
+
+    .breakdown-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.88rem;
+    }
+
+    .char-badge {
+      background: var(--tag-bg);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 700;
+      color: #fff;
+      font-size: 1rem;
+    }
+
+    .char-pinyin {
+      color: var(--primary);
+      font-family: monospace;
+    }
+
+    .char-meaning {
+      color: var(--text-dim);
+    }
+
+    .explanation-box {
+      font-size: 0.88rem;
+      color: #c4c9d6;
+      background: #191b22;
+      border-left: 3px solid var(--primary);
+      padding: 8px 12px;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    }
+
+    .card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 12px;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    .mastery-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      user-select: none;
+      color: var(--text-dim);
+    }
+
+    .mastery-checkbox:hover {
+      color: var(--text);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="title-row">
+      <h1><span>🀄</span> JarvOS 华语 • Field Chinese Scratchpad</h1>
+      <div class="stats" id="statsCount">Loading...</div>
+    </div>
+    <p class="subtitle">Repetition vocabulary & symbols mined directly from your day-to-day AI agent sessions and threat hunting cases.</p>
+
+    <div class="controls-row">
+      <div class="search-box">
+        <input type="text" id="searchInput" placeholder="Search by English, Chinese characters, or Pinyin...">
+      </div>
+    </div>
+
+    <div class="category-chips" id="categoryChips">
+      <div class="chip active" data-cat="all">All Words & Phrases</div>
+      <div class="chip" data-cat="Threat Hunting & DFIR">Threat Hunting & DFIR</div>
+      <div class="chip" data-cat="AI Agent Prompts">AI Agent Prompts</div>
+      <div class="chip" data-cat="System Architecture & Ops">System Architecture & Ops</div>
+      <div class="chip" data-cat="unmastered">Need Review</div>
+    </div>
+  </header>
+
+  <main id="cardsContainer">
+    <!-- Rendered via JS -->
+  </main>
+
+  <script>
+    let vocabulary = [];
+    let masteredSet = new Set(JSON.parse(localStorage.getItem("jarvos_chinese_mastered") || "[]"));
+    let currentCategory = "all";
+    let searchQuery = "";
+
+    async function loadData() {
+      try {
+        const res = await fetch("vocabulary.json");
+        vocabulary = await res.json();
+      } catch (e) {
+        console.error("Failed to load vocabulary.json", e);
+      }
+      render();
+    }
+
+    function playAudio(text) {
+      // 1. Try native Web Speech API (zero latency, offline)
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = "zh-CN";
+        utter.rate = 0.85; // Slightly slower for clear learning
+        window.speechSynthesis.speak(utter);
+        return;
+      }
+
+      // 2. Fallback to free Google TTS audio stream
+      const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=zh-CN&client=tw-ob`;
+      const audio = new Audio(audioUrl);
+      audio.play().catch(e => console.warn("Audio play error", e));
+    }
+
+    function toggleMastered(id) {
+      if (masteredSet.has(id)) {
+        masteredSet.delete(id);
+      } else {
+        masteredSet.add(id);
+      }
+      localStorage.setItem("jarvos_chinese_mastered", JSON.stringify([...masteredSet]));
+      render();
+    }
+
+    function render() {
+      const container = document.getElementById("cardsContainer");
+      container.innerHTML = "";
+
+      const q = searchQuery.toLowerCase().trim();
+
+      const filtered = vocabulary.filter(item => {
+        // Category filter
+        if (currentCategory === "unmastered" && masteredSet.has(item.id)) return false;
+        if (currentCategory !== "all" && currentCategory !== "unmastered" && item.category !== currentCategory) return false;
+
+        // Search filter
+        if (q) {
+          const matchEn = item.english.toLowerCase().includes(q);
+          const matchSimp = item.simplified.includes(q);
+          const matchTrad = item.traditional.includes(q);
+          const matchPy = item.pinyin.toLowerCase().includes(q);
+          const matchExp = item.explanation.toLowerCase().includes(q);
+          return matchEn || matchSimp || matchTrad || matchPy || matchExp;
+        }
+        return true;
+      });
+
+      document.getElementById("statsCount").textContent = `${filtered.length} of ${vocabulary.length} entries (${masteredSet.size} mastered)`;
+
+      filtered.forEach(item => {
+        const isMastered = masteredSet.has(item.id);
+        const card = document.createElement("div");
+        card.className = `card ${isMastered ? "mastered" : ""}`;
+
+        // Breakdown items
+        const breakdownHtml = item.breakdown.map(b => `
+          <div class="breakdown-item">
+            <span class="char-badge">${b.char}${b.traditional ? ' / ' + b.traditional : ''}</span>
+            <span class="char-pinyin">${b.pinyin}</span>
+            <span class="char-meaning">: ${b.meaning}</span>
+          </div>
+        `).join("");
+
+        card.innerHTML = `
+          <div class="card-top">
+            <div class="english-title">${item.english}</div>
+            <div class="category-badge">${item.category}</div>
+          </div>
+
+          <div class="chinese-display">
+            <div class="hanzi-box">
+              <span>${item.simplified}</span>
+              ${item.traditional !== item.simplified ? `<span class="hanzi-traditional">(${item.traditional})</span>` : ''}
+            </div>
+            <div class="pinyin-box">[ ${item.pinyin} ]</div>
+            <button class="audio-btn" onclick="playAudio('${item.simplified}')">
+              🔊 Play
+            </button>
+          </div>
+
+          <div class="breakdown-table">
+            ${breakdownHtml}
+          </div>
+
+          <div class="explanation-box">
+            💡 <strong>Context & Nuance:</strong> ${item.explanation}
+          </div>
+
+          <div class="card-footer">
+            <label class="mastery-checkbox">
+              <input type="checkbox" ${isMastered ? "checked" : ""} onchange="toggleMastered('${item.id}')">
+              <span>${isMastered ? "Mastered" : "Mark as Mastered"}</span>
+            </label>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    // Event listeners
+    document.getElementById("searchInput").addEventListener("input", e => {
+      searchQuery = e.target.value;
+      render();
+    });
+
+    document.querySelectorAll(".chip").forEach(chip => {
+      chip.addEventListener("click", () => {
+        document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+        chip.classList.add("active");
+        currentCategory = chip.dataset.cat;
+        render();
+      });
+    });
+
+    loadData();
+  </script>
+</body>
+</html>

@@ -1,0 +1,374 @@
+[
+  {
+    "id": "av-evasion",
+    "category": "Threat Hunting & DFIR",
+    "english": "AV Evasion / Bypassing Antivirus",
+    "simplified": "免杀",
+    "traditional": "免殺",
+    "pinyin": "miǎn shā",
+    "breakdown": [
+      { "char": "免", "pinyin": "miǎn", "meaning": "to exempt / avoid / spare" },
+      { "char": "杀", "traditional": "殺", "pinyin": "shā", "meaning": "to kill (short for 杀毒软件, antivirus)" }
+    ],
+    "explanation": "Literally 'exempt from killing'. In Chinese cybersecurity and offensive research, '杀' refers to 杀毒软件 (antivirus/antimalware). '免杀' means techniques used to evade detection and quarantine by EDR/AV solutions."
+  },
+  {
+    "id": "backdoor",
+    "category": "Threat Hunting & DFIR",
+    "english": "Backdoor",
+    "simplified": "后门",
+    "traditional": "後門",
+    "pinyin": "hòu mén",
+    "breakdown": [
+      { "char": "后", "traditional": "後", "pinyin": "hòu", "meaning": "back / rear" },
+      { "char": "门", "traditional": "門", "pinyin": "mén", "meaning": "door / gateway" }
+    ],
+    "explanation": "Direct conceptual parallel to English: a secret entry point left in software or a network that circumvents normal authentication."
+  },
+  {
+    "id": "trojan-implant",
+    "category": "Threat Hunting & DFIR",
+    "english": "Trojan / Implant",
+    "simplified": "木马",
+    "traditional": "木馬",
+    "pinyin": "mù mǎ",
+    "breakdown": [
+      { "char": "木", "pinyin": "mù", "meaning": "wood / wooden" },
+      { "char": "马", "traditional": "馬", "pinyin": "mǎ", "meaning": "horse" }
+    ],
+    "explanation": "Short for 特洛伊木马 (Trojan Horse). Refers to any malicious implant disguised as benign software or operating invisibly on the host."
+  },
+  {
+    "id": "privilege-escalation",
+    "category": "Threat Hunting & DFIR",
+    "english": "Privilege Escalation (PrivEsc)",
+    "simplified": "提权",
+    "traditional": "提權",
+    "pinyin": "tí quán",
+    "breakdown": [
+      { "char": "提", "pinyin": "tí", "meaning": "to lift / elevate / raise" },
+      { "char": "权", "traditional": "權", "pinyin": "quán", "meaning": "power / authority / permissions" }
+    ],
+    "explanation": "Contraction of 提升权限 (elevating permissions). The standard term across Chinese security teams for exploiting flaws to gain root/SYSTEM rights."
+  },
+  {
+    "id": "lateral-movement",
+    "category": "Threat Hunting & DFIR",
+    "english": "Lateral Movement",
+    "simplified": "横向移动",
+    "traditional": "橫向移動",
+    "pinyin": "héng xiàng yí dòng",
+    "breakdown": [
+      { "char": "横", "traditional": "橫", "pinyin": "héng", "meaning": "horizontal / across" },
+      { "char": "向", "pinyin": "xiàng", "meaning": "direction / toward" },
+      { "char": "移", "pinyin": "yí", "meaning": "to shift / transfer" },
+      { "char": "动", "traditional": "動", "pinyin": "dòng", "meaning": "movement / action" }
+    ],
+    "explanation": "Techniques adversaries use to extend access from one compromised host across neighboring systems in an internal network (e.g. PsExec, WMI, SMB)."
+  },
+  {
+    "id": "pivot-jumpbox",
+    "category": "Threat Hunting & DFIR",
+    "english": "Pivot / Jump Box",
+    "simplified": "跳板",
+    "traditional": "跳板",
+    "pinyin": "tiào bǎn",
+    "breakdown": [
+      { "char": "跳", "pinyin": "tiào", "meaning": "to jump / leap" },
+      { "char": "板", "pinyin": "bǎn", "meaning": "board / plank (springboard)" }
+    ],
+    "explanation": "Literally 'springboard' or 'diving board'. An intermediate compromised machine used as a proxy or stepping stone to reach isolated internal segments."
+  },
+  {
+    "id": "remote-access-trojan",
+    "category": "Threat Hunting & DFIR",
+    "english": "Remote Access Trojan (RAT)",
+    "simplified": "远控",
+    "traditional": "遠控",
+    "pinyin": "yuǎn kòng",
+    "breakdown": [
+      { "char": "远", "traditional": "遠", "pinyin": "yuǎn", "meaning": "distant / remote" },
+      { "char": "控", "pinyin": "kòng", "meaning": "control / manage" }
+    ],
+    "explanation": "Contraction of 远程控制 (remote control). Specifically used in threat intelligence for adversary command agents (e.g. Gh0st RAT, PlugX)."
+  },
+  {
+    "id": "phishing",
+    "category": "Threat Hunting & DFIR",
+    "english": "Phishing",
+    "simplified": "钓鱼",
+    "traditional": "釣魚",
+    "pinyin": "diào yú",
+    "breakdown": [
+      { "char": "钓", "traditional": "釣", "pinyin": "diào", "meaning": "to angle / fish with a hook" },
+      { "char": "鱼", "traditional": "魚", "pinyin": "yú", "meaning": "fish" }
+    ],
+    "explanation": "Same metaphor as English 'fishing / phishing'. Social engineering via deceptive emails, malicious attachments, or spoofed login portals."
+  },
+  {
+    "id": "vulnerability-exploit",
+    "category": "Threat Hunting & DFIR",
+    "english": "Vulnerability / Exploit",
+    "simplified": "漏洞",
+    "traditional": "漏洞",
+    "pinyin": "lòu dòng",
+    "breakdown": [
+      { "char": "漏", "pinyin": "lòu", "meaning": "to leak / escape" },
+      { "char": "洞", "pinyin": "dòng", "meaning": "hole / cavity" }
+    ],
+    "explanation": "Literally 'a leak hole'. The universal term for software security flaws and security vulnerabilities (CVEs)."
+  },
+  {
+    "id": "penetration-testing",
+    "category": "Threat Hunting & DFIR",
+    "english": "Penetration Testing (Pentest)",
+    "simplified": "渗透测试",
+    "traditional": "滲透測試",
+    "pinyin": "shèn tòu cè shì",
+    "breakdown": [
+      { "char": "渗", "traditional": "滲", "pinyin": "shèn", "meaning": "to seep / permeate" },
+      { "char": "透", "pinyin": "tòu", "meaning": "to penetrate / pass through" },
+      { "char": "测", "traditional": "測", "pinyin": "cè", "meaning": "to gauge / measure" },
+      { "char": "试", "traditional": "試", "pinyin": "shì", "meaning": "to test / try" }
+    ],
+    "explanation": "Authorized simulated cyberattack against computer systems to evaluate security."
+  },
+  {
+    "id": "threat-intelligence",
+    "category": "Threat Hunting & DFIR",
+    "english": "Threat Intelligence (CTI)",
+    "simplified": "威胁情报",
+    "traditional": "威脅情報",
+    "pinyin": "wēi xié qíng bào",
+    "breakdown": [
+      { "char": "威", "pinyin": "wēi", "meaning": "might / force" },
+      { "char": "胁", "traditional": "脅", "pinyin": "xié", "meaning": "threat / coerce" },
+      { "char": "情", "pinyin": "qíng", "meaning": "situation / circumstances" },
+      { "char": "报", "traditional": "報", "pinyin": "bào", "meaning": "report / intelligence" }
+    ],
+    "explanation": "Evidence-based knowledge, including context, mechanisms, indicators, and actionable advice about threats."
+  },
+  {
+    "id": "memory-forensics",
+    "category": "Threat Hunting & DFIR",
+    "english": "Memory Forensics",
+    "simplified": "内存取证",
+    "traditional": "內存取證",
+    "pinyin": "nèi cún qǔ zhèng",
+    "breakdown": [
+      { "char": "内", "traditional": "內", "pinyin": "nèi", "meaning": "inside / internal" },
+      { "char": "存", "pinyin": "cún", "meaning": "storage (RAM)" },
+      { "char": "取", "pinyin": "qǔ", "meaning": "to take / extract / obtain" },
+      { "char": "证", "traditional": "證", "pinyin": "zhèng", "meaning": "evidence / proof" }
+    ],
+    "explanation": "The analysis of volatile RAM memory dumps to identify stealthy, fileless malware and in-memory injection."
+  },
+  {
+    "id": "process-injection",
+    "category": "Threat Hunting & DFIR",
+    "english": "Process Injection",
+    "simplified": "进程注入",
+    "traditional": "進程注入",
+    "pinyin": "jìn chéng zhù rù",
+    "breakdown": [
+      { "char": "进", "traditional": "進", "pinyin": "jìn", "meaning": "advance / enter" },
+      { "char": "程", "pinyin": "chéng", "meaning": "procedure / order (进程 = process)" },
+      { "char": "注", "pinyin": "zhù", "meaning": "to pour into / inject" },
+      { "char": "入", "pinyin": "rù", "meaning": "to enter" }
+    ],
+    "explanation": "Executing arbitrary code in the address space of a separate, live running process to evade defenses."
+  },
+  {
+    "id": "command-and-control",
+    "category": "Threat Hunting & DFIR",
+    "english": "Command and Control (C2)",
+    "simplified": "命令与控制",
+    "traditional": "命令與控制",
+    "pinyin": "mìng lìng yǔ kòng zhì",
+    "breakdown": [
+      { "char": "命令", "pinyin": "mìng lìng", "meaning": "command / order" },
+      { "char": "与", "traditional": "與", "pinyin": "yǔ", "meaning": "and / together with" },
+      { "char": "控制", "pinyin": "kòng zhì", "meaning": "control" }
+    ],
+    "explanation": "Infrastructure used by attackers to maintain communication with compromised systems within a target network."
+  },
+  {
+    "id": "persistence-mechanism",
+    "category": "Threat Hunting & DFIR",
+    "english": "Persistence Mechanism",
+    "simplified": "持久化",
+    "traditional": "持久化",
+    "pinyin": "chí jiǔ huà",
+    "breakdown": [
+      { "char": "持", "pinyin": "chí", "meaning": "to hold / maintain" },
+      { "char": "久", "pinyin": "jiǔ", "meaning": "long time / enduring" },
+      { "char": "化", "pinyin": "huà", "meaning": "-ize / transformation suffix" }
+    ],
+    "explanation": "Techniques that adversaries use to keep access across system restarts, altered credentials, and other interruptions (cron, systemd, registry)."
+  },
+  {
+    "id": "please-continue",
+    "category": "AI Agent Prompts",
+    "english": "Please continue",
+    "simplified": "请继续",
+    "traditional": "請繼續",
+    "pinyin": "qǐng jì xù",
+    "breakdown": [
+      { "char": "请", "traditional": "請", "pinyin": "qǐng", "meaning": "please / to request" },
+      { "char": "继", "traditional": "繼", "pinyin": "jì", "meaning": "to follow / succeed" },
+      { "char": "续", "traditional": "續", "pinyin": "xù", "meaning": "to extend / continue" }
+    ],
+    "explanation": "The most frequent prompt in agent workflows when resuming tasks, continuing code edits, or following up on execution plans."
+  },
+  {
+    "id": "fix-this-issue",
+    "category": "AI Agent Prompts",
+    "english": "Fix this issue / bug",
+    "simplified": "修复这个问题",
+    "traditional": "修復這個問題",
+    "pinyin": "xiū fù zhè ge wèn tí",
+    "breakdown": [
+      { "char": "修", "pinyin": "xiū", "meaning": "to repair / mend" },
+      { "char": "复", "traditional": "復", "pinyin": "fù", "meaning": "to restore / repeat" },
+      { "char": "这个", "traditional": "這個", "pinyin": "zhè ge", "meaning": "this" },
+      { "char": "问题", "traditional": "問題", "pinyin": "wèn tí", "meaning": "question / problem / issue" }
+    ],
+    "explanation": "Direct command to an AI model to patch a failing test, resolve a bug, or fix a compilation error."
+  },
+  {
+    "id": "run-the-tests",
+    "category": "AI Agent Prompts",
+    "english": "Run the tests",
+    "simplified": "运行测试",
+    "traditional": "運行測試",
+    "pinyin": "yùn xíng cè shì",
+    "breakdown": [
+      { "char": "运", "traditional": "運", "pinyin": "yùn", "meaning": "to move / operate" },
+      { "char": "行", "pinyin": "xíng", "meaning": "to walk / execute" },
+      { "char": "测", "traditional": "測", "pinyin": "cè", "meaning": "to measure" },
+      { "char": "试", "traditional": "試", "pinyin": "shì", "meaning": "to try / test" }
+    ],
+    "explanation": "Standard verification directive to execute test suites (e.g. pytest, run-all.sh, cargo test) before committing changes."
+  },
+  {
+    "id": "do-not-reinvent-wheel",
+    "category": "AI Agent Prompts",
+    "english": "Don't reinvent the wheel",
+    "simplified": "不要重复造轮子",
+    "traditional": "不要重複造輪子",
+    "pinyin": "bù yào chóng fù zào lún zi",
+    "breakdown": [
+      { "char": "不要", "pinyin": "bù yào", "meaning": "do not" },
+      { "char": "重复", "traditional": "重複", "pinyin": "chóng fù", "meaning": "repeat / duplicate" },
+      { "char": "造", "pinyin": "zào", "meaning": "to build / manufacture" },
+      { "char": "轮子", "traditional": "輪子", "pinyin": "lún zi", "meaning": "wheel" }
+    ],
+    "explanation": "Crucial software engineering aphorism: reuse existing mature libraries, forks (e.g. omarchy), and well-tested tools rather than writing from scratch."
+  },
+  {
+    "id": "analyze-root-cause",
+    "category": "AI Agent Prompts",
+    "english": "Analyze root cause",
+    "simplified": "分析根本原因",
+    "traditional": "分析根本原因",
+    "pinyin": "fēn xī gēn běn yuán yīn",
+    "breakdown": [
+      { "char": "分", "pinyin": "fēn", "meaning": "to divide / separate" },
+      { "char": "析", "pinyin": "xī", "meaning": "to dissect / explain (分析 = analyze)" },
+      { "char": "根", "pinyin": "gēn", "meaning": "root / foundation" },
+      { "char": "本", "pinyin": "běn", "meaning": "origin / base" },
+      { "char": "原", "pinyin": "yuán", "meaning": "source / cause" },
+      { "char": "因", "pinyin": "yīn", "meaning": "reason / factor" }
+    ],
+    "explanation": "Investigate underlying failure mechanism rather than merely masking or suppressing symptoms."
+  },
+  {
+    "id": "code-review",
+    "category": "AI Agent Prompts",
+    "english": "Code Review",
+    "simplified": "代码审查",
+    "traditional": "代碼審查",
+    "pinyin": "dài mǎ shěn chá",
+    "breakdown": [
+      { "char": "代", "pinyin": "dài", "meaning": "substitute / represent" },
+      { "char": "码", "traditional": "碼", "pinyin": "mǎ", "meaning": "number / symbol (代码 = source code)" },
+      { "char": "审", "traditional": "審", "pinyin": "shěn", "meaning": "to examine / judge" },
+      { "char": "查", "pinyin": "chá", "meaning": "to inspect / check" }
+    ],
+    "explanation": "Systematic examination of computer source code intended to find mistakes overlooked in the initial development phase."
+  },
+  {
+    "id": "commit-all-changes",
+    "category": "AI Agent Prompts",
+    "english": "Commit all changes",
+    "simplified": "提交所有更改",
+    "traditional": "提交所有更改",
+    "pinyin": "tí jiāo suǒ yǒu gēng gǎi",
+    "breakdown": [
+      { "char": "提", "pinyin": "tí", "meaning": "to bring forward" },
+      { "char": "交", "pinyin": "jiāo", "meaning": "to hand over (提交 = commit / submit)" },
+      { "char": "所有", "pinyin": "suǒ yǒu", "meaning": "all / entire" },
+      { "char": "更", "pinyin": "gēng", "meaning": "to change / replace" },
+      { "char": "改", "pinyin": "gǎi", "meaning": "to alter / revise (更改 = modifications)" }
+    ],
+    "explanation": "Git workflow command to stage everything and create a versioned checkpoint without cherry-picking."
+  },
+  {
+    "id": "zero-delay",
+    "category": "System Architecture & Ops",
+    "english": "Zero Delay / Real-time",
+    "simplified": "零延迟",
+    "traditional": "零延遲",
+    "pinyin": "líng yán chí",
+    "breakdown": [
+      { "char": "零", "pinyin": "líng", "meaning": "zero" },
+      { "char": "延", "pinyin": "yán", "meaning": "to prolong / delay" },
+      { "char": "迟", "traditional": "遲", "pinyin": "chí", "meaning": "late / slow" }
+    ],
+    "explanation": "Architecture where state transitions update instantly via kernel events (pidfd, inotify) rather than polling timers."
+  },
+  {
+    "id": "event-driven",
+    "category": "System Architecture & Ops",
+    "english": "Event Driven",
+    "simplified": "事件驱动",
+    "traditional": "事件驅動",
+    "pinyin": "shì jiàn qū dòng",
+    "breakdown": [
+      { "char": "事", "pinyin": "shì", "meaning": "matter / thing" },
+      { "char": "件", "pinyin": "jiàn", "meaning": "item / document (事件 = event)" },
+      { "char": "驱", "traditional": "驅", "pinyin": "qū", "meaning": "to drive / urge" },
+      { "char": "动", "traditional": "動", "pinyin": "dòng", "meaning": "to act / move (驱动 = driven / driver)" }
+    ],
+    "explanation": "Software architecture pattern in which decoupled components communicate through event emission and kernel epoll notifications."
+  },
+  {
+    "id": "field-deployment",
+    "category": "System Architecture & Ops",
+    "english": "Field Deployment",
+    "simplified": "现场部署",
+    "traditional": "現場部署",
+    "pinyin": "xiàn chǎng bù shǔ",
+    "breakdown": [
+      { "char": "现", "traditional": "現", "pinyin": "xiàn", "meaning": "current / present" },
+      { "char": "场", "traditional": "場", "pinyin": "chǎng", "meaning": "place / arena (现场 = on-site / field)" },
+      { "char": "部", "pinyin": "bù", "meaning": "section / arrange" },
+      { "char": "署", "pinyin": "shǔ", "meaning": "office / position (部署 = deploy)" }
+    ],
+    "explanation": "Deploying hardened operating systems and portable forensic toolkits directly onto physical field hardware without internet reliance."
+  },
+  {
+    "id": "low-cpu-usage",
+    "category": "System Architecture & Ops",
+    "english": "Low CPU Usage",
+    "simplified": "低 CPU 占用",
+    "traditional": "低 CPU 佔用",
+    "pinyin": "dī CPU zhàn yòng",
+    "breakdown": [
+      { "char": "低", "pinyin": "dī", "meaning": "low" },
+      { "char": "占", "traditional": "佔", "pinyin": "zhàn", "meaning": "to occupy / possess" },
+      { "char": "用", "pinyin": "yòng", "meaning": "to use" }
+    ],
+    "explanation": "Designing background monitors and status indicators that sleep in kernel syscalls (epoll_wait) rather than consuming CPU cycles in busy loops."
+  }
+]
