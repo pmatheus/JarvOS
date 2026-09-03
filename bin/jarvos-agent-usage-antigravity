@@ -8,16 +8,49 @@ Scans ~/.gemini/antigravity-cli/brain/ transcripts, extracting session counts,
 daily activity, and model stats.
 """
 
-from __future__ import annotations
 import datetime as dt
 import glob
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
 AGENT_ID = "antigravity"
 AGENT_NAME = "Antigravity (AGY)"
+
+def check_rate_limit() -> tuple[bool, str]:
+    """Check recent CLI logs for active RESOURCE_EXHAUSTED rate limits.
+    Returns (is_active, resets_at_iso).
+    """
+    log_dir = Path(os.path.expanduser("~/.gemini/antigravity-cli/log"))
+    if not log_dir.is_dir():
+        return False, ""
+
+    log_files = sorted(log_dir.glob("cli-*.log"), key=os.path.getmtime, reverse=True)
+    now = dt.datetime.now().astimezone()
+
+    for lf in log_files[:10]:
+        try:
+            with open(lf, "r", encoding="utf-8", errors="ignore") as f:
+                lines = f.readlines()
+            for line in reversed(lines):
+                if "RESOURCE_EXHAUSTED" in line and "Resets in" in line:
+                    m_time = re.search(r"\b[IWEF](\d{2})(\d{2})\s+(\d{2}):(\d{2}):(\d{2})", line)
+                    m_reset = re.search(r"Resets in (?:(\d+)m)?(?:(\d+)s)?", line)
+                    if m_time and m_reset:
+                        mo, day, hr, mn, sc = map(int, m_time.groups())
+                        log_dt = dt.datetime(now.year, mo, day, hr, mn, sc).replace(tzinfo=now.tzinfo)
+                        mins = int(m_reset.group(1) or 0)
+                        secs = int(m_reset.group(2) or 0)
+                        reset_dt = log_dt + dt.timedelta(minutes=mins, seconds=secs)
+                        if now < reset_dt:
+                            return True, reset_dt.isoformat()
+                        return False, ""
+        except Exception:
+            continue
+
+    return False, ""
 
 def recent_date_strings() -> list[str]:
     today = dt.datetime.now().date()
@@ -91,6 +124,21 @@ def main():
 
     recent_days = [{"date": d, "messageCount": recent_by_day[d]} for d in dates]
 
+    is_exhausted, resets_at = check_rate_limit()
+
+    limits = [
+        {
+            "label": "Burst / Rate Limit",
+            "percent": 1.0 if is_exhausted else 0.0,
+            "resetsAt": resets_at if is_exhausted else ""
+        },
+        {
+            "label": "Session Quota",
+            "percent": 1.0 if is_exhausted else 0.0,
+            "resetsAt": resets_at if is_exhausted else ""
+        }
+    ]
+
     record = {
         "schemaVersion": 1,
         "id": AGENT_ID,
@@ -106,20 +154,9 @@ def main():
         "totalSessions": total_sessions,
         "activeDays": len(active_dates),
         "activeDates": sorted(list(active_dates)),
-        "tierLabel": "Student / Pro ($20/mo)",
+        "tierLabel": "Quota Exhausted" if is_exhausted else "Student / Pro ($20/mo)",
         "modelUsage": model_usage,
-        "limits": [
-            {
-                "label": "Session (5-hour)",
-                "percent": 0.12,
-                "resetsAt": ""
-            },
-            {
-                "label": "Weekly (7-day)",
-                "percent": 0.25,
-                "resetsAt": ""
-            }
-        ]
+        "limits": limits
     }
     print(json.dumps(record, indent=2))
 
