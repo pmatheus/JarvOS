@@ -33,6 +33,17 @@ def main():
     active_dates: set[str] = set()
     model_usage: dict[str, dict[str, int]] = {}
 
+    now_ms = int(dt.datetime.now().timestamp() * 1000)
+    five_hours_ago_ms = now_ms - (5 * 3600 * 1000)
+    seven_days_ago_ms = now_ms - (7 * 24 * 3600 * 1000)
+    thirty_days_ago_ms = now_ms - (30 * 24 * 3600 * 1000)
+
+    cost_5h = 0.0
+    cost_7d = 0.0
+    cost_30d = 0.0
+    min_tc_5h: int | None = None
+    min_tc_7d: int | None = None
+
     if db_path.is_file():
         try:
             conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
@@ -76,10 +87,23 @@ def main():
                         continue
 
                     if isinstance(tc, (int, float)):
-                        ts = float(tc) / 1000.0 if float(tc) > 10_000_000_000 else float(tc)
+                        tc_ms = int(tc) if float(tc) > 10_000_000_000 else int(float(tc) * 1000)
+                        ts = float(tc_ms) / 1000.0
                         d = dt.datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
                     else:
                         d = str(tc)[:10]
+                        tc_ms = now_ms
+
+                    c_val = float(entry.get("cost") or 0.0)
+                    cost_30d += c_val
+                    if tc_ms >= seven_days_ago_ms:
+                        cost_7d += c_val
+                        if min_tc_7d is None and c_val > 0:
+                            min_tc_7d = tc_ms
+                    if tc_ms >= five_hours_ago_ms:
+                        cost_5h += c_val
+                        if min_tc_5h is None and c_val > 0:
+                            min_tc_5h = tc_ms
 
                     model = str(entry.get("modelID") or "opencode").rstrip("/").split("/")[-1]
                     active_dates.add(d)
@@ -112,10 +136,21 @@ def main():
 
     recent_days = [{"date": d, "messageCount": recent_by_day[d]} for d in dates]
 
+    # OpenCode Go official plan limits: $12 rolling 5-hour, $30 weekly (7-day), $60 monthly
+    limit_5h = 12.0
+    limit_7d = 30.0
+    limit_30d = 60.0
+
+    pct_5h = round(min(1.0, cost_5h / limit_5h), 4)
+    pct_7d = round(min(1.0, cost_7d / limit_7d), 4)
+    pct_30d = round(min(1.0, cost_30d / limit_30d), 4)
+
+    reset_5h = dt.datetime.fromtimestamp((min_tc_5h + (5 * 3600 * 1000)) / 1000.0, dt.timezone.utc).isoformat() if min_tc_5h else ""
+    reset_7d = dt.datetime.fromtimestamp((min_tc_7d + (7 * 86400 * 1000)) / 1000.0, dt.timezone.utc).isoformat() if min_tc_7d else ""
+
     # Check for recent rate limits in opencode.log
     log_file = Path(os.path.expanduser("~/.local/share/opencode/log/opencode.log"))
     is_rate_limited = False
-    reset_at_str = ""
     if log_file.is_file():
         try:
             with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
@@ -129,14 +164,19 @@ def main():
 
     limits = [
         {
-            "label": "Session (5-hour)",
-            "percent": 1.0 if is_rate_limited else 0.0,
-            "resetsAt": reset_at_str
+            "label": f"Session (5-hour · ${cost_5h:.2f}/${int(limit_5h)})" if cost_5h > 0 else "Session (5-hour)",
+            "percent": 1.0 if is_rate_limited else pct_5h,
+            "resetsAt": reset_5h
         },
         {
-            "label": "Weekly (7-day)",
-            "percent": 1.0 if is_rate_limited else 0.0,
-            "resetsAt": reset_at_str
+            "label": f"Weekly (7-day · ${cost_7d:.2f}/${int(limit_7d)})" if cost_7d > 0 else "Weekly (7-day)",
+            "percent": 1.0 if is_rate_limited else pct_7d,
+            "resetsAt": reset_7d
+        },
+        {
+            "label": f"Monthly (${cost_30d:.2f}/${int(limit_30d)})" if cost_30d > 0 else "Monthly",
+            "percent": 1.0 if is_rate_limited else pct_30d,
+            "resetsAt": ""
         }
     ]
 
