@@ -159,6 +159,14 @@ RowLayout {
                 }
             }
             DelegateChoice {
+                roleValue: "agentStatus"
+                delegate: WrappedLoader {
+                    sourceComponent: AgentStatus {
+                        bar: root
+                    }
+                }
+            }
+            DelegateChoice {
                 roleValue: "tray"
                 delegate: WrappedLoader {
                     sourceComponent: Tray {}

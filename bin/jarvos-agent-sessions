@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# jarvos-agent-sessions [--json]
+#
+# jarvos:summary=List active AI agent sessions across the system
+# jarvos:args=[--json]
+# jarvos:examples=jarvos-agent-sessions | jarvos-agent-sessions --json
+
+set -euo pipefail
+
+# shellcheck source=lib/jarvos-common.sh
+_lib="$(dirname "$(realpath "$0")")/../lib/jarvos-common.sh"
+if [[ -r "$_lib" ]]; then source "$_lib"; else source /usr/share/jarvos/lib/jarvos-common.sh; fi
+unset _lib
+
+OUTPUT_JSON=0
+OUTPUT_FULL=0
+for arg in "$@"; do
+    case "$arg" in
+        --json) OUTPUT_JSON=1 ;;
+        --full) OUTPUT_FULL=1; OUTPUT_JSON=1 ;;
+        -h|--help)
+            sed -n '2,6p' "$0"
+            exit 0
+            ;;
+        *) die "unknown option: $arg" ;;
+    esac
+done
+
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/jarvos/agents"
+mkdir -p "$RUNTIME_DIR"
+
+python3 - "$RUNTIME_DIR" "$OUTPUT_JSON" "$OUTPUT_FULL" << 'PYEOF'
+import os
+import sys
+import json
+import glob
+from datetime import datetime
+
+runtime_dir = sys.argv[1]
+output_json = (sys.argv[2] == "1")
+output_full = (sys.argv[3] == "1")
+
+sessions = {}
+
+# 1. Read registered sessions
+if os.path.isdir(runtime_dir):
+    for fpath in glob.glob(os.path.join(runtime_dir, "*.json")):
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            pid = int(data.get("pid", 0))
+            if pid > 0 and os.path.exists(f"/proc/{pid}"):
+                sessions[pid] = {
+                    "agent": data.get("agent", "unknown"),
+                    "pid": pid,
+                    "cwd": data.get("cwd", ""),
+                    "started": data.get("started", ""),
+                    "task": data.get("task", data.get("cwd", ""))
+                }
+            else:
+                # Stale record: process gone, reap file
+                try:
+                    os.unlink(fpath)
+                except OSError:
+                    pass
+        except Exception:
+            try:
+                os.unlink(fpath)
+            except OSError:
+                pass
+
+# 2. Discover unrecorded live agent processes (no false positives)
+KNOWN_AGENTS = {"claude", "codex", "opencode", "antigravity", "agy"}
+try:
+    for p in glob.glob("/proc/[0-9]*"):
+        try:
+            pid = int(os.path.basename(p))
+            if pid in sessions:
+                continue
+            with open(f"{p}/comm", "r", encoding="utf-8") as cf:
+                comm = cf.read().strip()
+            if comm in KNOWN_AGENTS:
+                with open(f"{p}/cmdline", "r", encoding="utf-8", errors="ignore") as cmdf:
+                    cmdline = cmdf.read().split("\0")
+                # Filter out background helpers
+                if any("--chrome-native-host" in arg for arg in cmdline):
+                    continue
+                cwd = ""
+                try:
+                    cwd = os.readlink(f"{p}/cwd")
+                except OSError:
+                    pass
+                agent_name = "antigravity" if comm == "agy" else comm
+                task_desc = cwd if cwd else " ".join([c for c in cmdline if c][:2])
+                # Try finding a descriptive title for Claude sessions
+                if agent_name == "claude" and cwd:
+                    try:
+                        import glob
+                        slug = cwd.strip("/").replace("/", "-").replace("_", "-")
+                        for m in glob.glob(os.path.expanduser(f"~/.claude/projects/-{slug}*")):
+                            for jf in sorted(glob.glob(os.path.join(m, "*.jsonl")), key=os.path.getmtime, reverse=True):
+                                try:
+                                    with open(jf, "rb") as f:
+                                        for line in f:
+                                            if b'"type":"ai-title"' in line:
+                                                d = json.loads(line)
+                                                t = d.get("aiTitle")
+                                                if t:
+                                                    task_desc = t
+                                                    break
+                                    if task_desc != cwd:
+                                        break
+                                except Exception:
+                                    pass
+                            if task_desc != cwd:
+                                break
+                    except Exception:
+                        pass
+                sessions[pid] = {
+                    "agent": agent_name,
+                    "pid": pid,
+                    "cwd": cwd,
+                    "started": "",
+                    "task": task_desc
+                }
+        except (ValueError, FileNotFoundError, PermissionError, ProcessLookupError):
+            continue
+except Exception:
+    pass
+
+session_list = sorted(sessions.values(), key=lambda s: (s["agent"], s["pid"]))
+
+if output_full:
+    usage_dir = os.path.expanduser("~/.local/state/jarvos/agents/usage")
+    providers = {}
+    if os.path.isdir(usage_dir):
+        for uf in glob.glob(os.path.join(usage_dir, "*.json")):
+            try:
+                with open(uf, "r", encoding="utf-8") as f:
+                    u_data = json.load(f)
+                prov_id = u_data.get("id") or os.path.basename(uf)[:-5]
+                providers[prov_id] = u_data
+            except Exception:
+                pass
+    out_obj = {
+        "sessions": session_list,
+        "providers": providers
+    }
+    print(json.dumps(out_obj, indent=2))
+elif output_json:
+    print(json.dumps(session_list, indent=2))
+else:
+    if not session_list:
+        print("No active agent sessions.")
+        sys.exit(0)
+    print(f"{'AGENT':<14} {'PID':<8} {'TASK / CWD'}")
+    print(f"{'-'*14} {'-'*8} {'-'*40}")
+    for s in session_list:
+        task = s["task"]
+        if s["cwd"] and s["cwd"] not in task:
+            task = f"{task} ({s['cwd']})"
+        print(f"{s['agent']:<14} {s['pid']:<8} {task}")
+PYEOF

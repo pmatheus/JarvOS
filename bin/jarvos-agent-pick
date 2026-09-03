@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# jarvos-agent-pick [--list]
+#
+# jarvos:summary=Interactive picker to launch or switch to an AI agent
+# jarvos:args=[--list]
+# jarvos:examples=jarvos-agent-pick | jarvos-agent-pick --list
+
+set -euo pipefail
+
+# shellcheck source=lib/jarvos-common.sh
+_lib="$(dirname "$(realpath "$0")")/../lib/jarvos-common.sh"
+if [[ -r "$_lib" ]]; then source "$_lib"; else source /usr/share/jarvos/lib/jarvos-common.sh; fi
+unset _lib
+
+AGENTS=("claude" "codex" "opencode" "antigravity")
+
+get_agent_sessions_count() {
+    local target="$1"
+    local count=0
+    local sessions_json
+    sessions_json="$("$JARVOS_PATH/bin/jarvos-agent-sessions" --json 2>/dev/null || echo "[]")"
+    count="$(python3 -c "
+import sys, json
+try:
+    data = json.loads('''$sessions_json''')
+    print(sum(1 for s in data if s.get('agent') == '$target' or (s.get('agent') == 'agy' and '$target' == 'antigravity')))
+except Exception:
+    print(0)
+")"
+    echo "$count"
+}
+
+if [[ "${1-}" == "--list" ]]; then
+    for a in "${AGENTS[@]}"; do
+        cnt="$(get_agent_sessions_count "$a")"
+        if [[ "$cnt" -gt 0 ]]; then
+            printf '%s (%d active)\n' "$a" "$cnt"
+        else
+            printf '%s (idle)\n' "$a"
+        fi
+    done
+    exit 0
+fi
+
+# Build options for picker
+options=()
+for a in "${AGENTS[@]}"; do
+    cnt="$(get_agent_sessions_count "$a")"
+    if [[ "$cnt" -gt 0 ]]; then
+        options+=("$a ($cnt active)")
+    else
+        options+=("$a (idle)")
+    fi
+done
+
+chosen=""
+if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v fuzzel >/dev/null 2>&1; then
+    pkill fuzzel 2>/dev/null || true
+    chosen="$(printf '%s\n' "${options[@]}" | fuzzel --dmenu --prompt "Agent > " || true)"
+else
+    if command -v fzf >/dev/null 2>&1; then
+        chosen="$(printf '%s\n' "${options[@]}" | fzf --prompt="Agent > " || true)"
+    else
+        select opt in "${options[@]}"; do
+            chosen="$opt"
+            break
+        done
+    fi
+fi
+
+[[ -n "$chosen" ]] || exit 0
+
+agent_name="${chosen%% *}"
+exec "$JARVOS_PATH/bin/jarvos-agent" "$agent_name"

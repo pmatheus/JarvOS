@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+# jarvos:summary=Extract, defang, and manage threat intelligence IOCs for field investigations
+# jarvos:args=[extract|defang|refang|add]
+# jarvos:examples=jarvos-hunt-ioc extract log.txt | jarvos-hunt-ioc defang 1.1.1.1 | jarvos-hunt-ioc add 192.168.1.50
+
+import argparse
+import datetime as dt
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+# Regex patterns for IOC extraction
+IPV4_REGEX = re.compile(r'\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b')
+SHA256_REGEX = re.compile(r'\b[a-fA-F0-9]{64}\b')
+SHA1_REGEX = re.compile(r'\b[a-fA-F0-9]{40}\b')
+MD5_REGEX = re.compile(r'\b[a-fA-F0-9]{32}\b')
+URL_REGEX = re.compile(r'https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+[^\s]*')
+DOMAIN_REGEX = re.compile(r'\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+(?:[a-zA-Z]{2,63})\b')
+
+def defang(text: str) -> str:
+    res = text
+    res = re.sub(r'https?://', lambda m: 'hxxps://' if m.group(0).startswith('https') else 'hxxp://', res)
+    res = re.sub(r'(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})', r'\1[.]\2[.]\3[.]\4', res)
+    # Defang common domains if not already defanged
+    res = re.sub(r'([a-zA-Z0-9-]+)\.([a-zA-Z]{2,10})\b', r'\1[.]\2', res)
+    return res
+
+def refang(text: str) -> str:
+    res = text.replace("[.]", ".").replace("(.)", ".").replace("hxxp://", "http://").replace("hxxps://", "https://")
+    return res
+
+def extract_iocs(content: str):
+    raw_ips = set(IPV4_REGEX.findall(content))
+    # Exclude typical private loopback/bogons if desired or keep all
+    sha256s = set(SHA256_REGEX.findall(content))
+    # Only match md5/sha1 that are not substrings of sha256
+    md5s = set(m for m in MD5_REGEX.findall(content) if not any(m in s for s in sha256s))
+    sha1s = set(s for s in SHA1_REGEX.findall(content) if not any(s in sha for sha in sha256s))
+    urls = set(URL_REGEX.findall(content))
+    
+    # Extract domains, excluding IPs and URLs
+    domains = set()
+    for d in DOMAIN_REGEX.findall(content):
+        if not IPV4_REGEX.match(d) and not any(d in u for u in urls):
+            # Exclude file extensions like .txt, .json, .sh, .py
+            if not d.endswith(('.txt', '.json', '.sh', '.py', '.md', '.png', '.jpg', '.conf', '.bak', '.log')):
+                domains.add(d)
+
+    return {
+        "ipv4": sorted(list(raw_ips)),
+        "sha256": sorted(list(sha256s)),
+        "sha1": sorted(list(sha1s)),
+        "md5": sorted(list(md5s)),
+        "urls": sorted(list(urls)),
+        "domains": sorted(list(domains))
+    }
+
+def main():
+    if len(sys.argv) < 2:
+        print("usage: jarvos-hunt-ioc <extract|defang|refang|add> [args...]", file=sys.stderr)
+        sys.exit(1)
+
+    cmd = sys.argv[1]
+
+    if cmd == "defang":
+        if len(sys.argv) < 3:
+            # Read from stdin
+            content = sys.stdin.read()
+        else:
+            content = " ".join(sys.argv[2:])
+        print(defang(content))
+
+    elif cmd == "refang":
+        if len(sys.argv) < 3:
+            content = sys.stdin.read()
+        else:
+            content = " ".join(sys.argv[2:])
+        print(refang(content))
+
+    elif cmd == "extract":
+        if len(sys.argv) < 3:
+            print("usage: jarvos-hunt-ioc extract <file_or_->", file=sys.stderr)
+            sys.exit(1)
+        filepath = sys.argv[2]
+        if filepath == "-":
+            content = sys.stdin.read()
+        else:
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+
+        iocs = extract_iocs(content)
+        print(json.dumps(iocs, indent=2))
+
+    elif cmd == "add":
+        if len(sys.argv) < 3:
+            print("usage: jarvos-hunt-ioc add <ioc> [--case <name>]", file=sys.stderr)
+            sys.exit(1)
+        ioc_val = sys.argv[2]
+        case_name = None
+        if "--case" in sys.argv:
+            idx = sys.argv.index("--case")
+            if idx + 1 < len(sys.argv):
+                case_name = sys.argv[idx + 1]
+
+        case_cmd = ["jarvos-case", "active", "--path"]
+        if case_name:
+            case_cmd = ["jarvos-case", "path", case_name]
+
+        try:
+            case_path = subprocess.check_output(case_cmd, text=True).strip()
+            iocs_dir = Path(case_path) / "iocs"
+            iocs_dir.mkdir(parents=True, exist_ok=True)
+            iocs_file = iocs_dir / "iocs.jsonl"
+            
+            entry = {
+                "ioc": ioc_val,
+                "defanged": defang(ioc_val),
+                "timestamp": dt.datetime.now(dt.timezone.utc).isoformat(),
+                "added_by": os.environ.get("USER", "analyst")
+            }
+            with open(iocs_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry) + "\n")
+            print(f"Added IOC to {iocs_file}: {entry['defanged']}")
+        except Exception as e:
+            print(f"Failed to add IOC to case: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        print(f"unknown command: {cmd}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+# jarvos:summary=Collect live volatile forensics and triage artifacts from a running host
+# jarvos:args=[--case <name>] [--out <dir>] [--dry-run] [--json]
+# jarvos:examples=jarvos-hunt-triage | jarvos-hunt-triage --case mte | jarvos-hunt-triage --dry-run
+
+import argparse
+import datetime as dt
+import glob
+import hashlib
+import json
+import os
+import shutil
+import socket
+import subprocess
+import sys
+import tarfile
+from pathlib import Path
+
+def run_cmd(cmd, check=False):
+    try:
+        res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
+        return res.stdout.strip()
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def file_sha256(path):
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except Exception:
+        return None
+
+def collect_triage():
+    now = dt.datetime.now(dt.timezone.utc)
+    hostname = socket.gethostname()
+    
+    triage = {
+        "metadata": {
+            "timestamp": now.isoformat(),
+            "hostname": hostname,
+            "kernel": run_cmd("uname -a"),
+            "uptime": run_cmd("uptime"),
+            "os_release": run_cmd("cat /etc/os-release | grep PRETTY_NAME | cut -d= -f2 | tr -d '\"'")
+        },
+        "network": {
+            "interfaces": run_cmd("ip -br addr show"),
+            "routes": run_cmd("ip route show"),
+            "listening_sockets": run_cmd("ss -tulnp"),
+            "established_connections": run_cmd("ss -tupna state established")
+        },
+        "processes": {
+            "deleted_executables": [],
+            "raw_sockets": run_cmd("cat /proc/net/raw"),
+            "process_tree": run_cmd("ps -eo pid,ppid,user,args --forest")
+        },
+        "persistence": {
+            "user_cron": run_cmd("crontab -l 2>/dev/null || true"),
+            "system_cron_files": glob.glob("/etc/cron*/*"),
+            "ld_preload": run_cmd("cat /etc/ld.so.preload 2>/dev/null || true"),
+            "systemd_timers": run_cmd("systemctl list-timers --no-pager --plain 2>/dev/null | head -n 30"),
+            "user_timers": run_cmd("systemctl --user list-timers --no-pager --plain 2>/dev/null | head -n 30")
+        },
+        "users": {
+            "current_logins": run_cmd("who"),
+            "recent_logins": run_cmd("last -n 15 2>/dev/null || true"),
+            "sudoers_users": run_cmd("getent group wheel sudo 2>/dev/null || true")
+        },
+        "kernel_modules": run_cmd("lsmod | head -n 40")
+    }
+
+    # Find running deleted executables (stealth injection / fileless execution)
+    for p in glob.glob("/proc/[0-9]*/exe"):
+        try:
+            target = os.readlink(p)
+            if "(deleted)" in target:
+                pid = int(p.split("/")[2])
+                try:
+                    cmdline = open(f"/proc/{pid}/cmdline", "r", errors="ignore").read().replace("\0", " ").strip()
+                except Exception:
+                    cmdline = ""
+                triage["processes"]["deleted_executables"].append({
+                    "pid": pid,
+                    "target": target,
+                    "cmdline": cmdline
+                })
+        except (OSError, ValueError):
+            continue
+
+    # Hash listening binaries
+    listening_hashes = {}
+    for line in triage["network"]["listening_sockets"].splitlines():
+        if "users:(" in line:
+            # extract pid
+            try:
+                parts = line.split("users:((")[1].split("))")[0].split(",")
+                for pt in parts:
+                    if "pid=" in pt:
+                        pid = pt.split("pid=")[1]
+                        exe_path = f"/proc/{pid}/exe"
+                        if os.path.exists(exe_path) and pid not in listening_hashes:
+                            real_exe = os.path.realpath(exe_path)
+                            h = file_sha256(real_exe)
+                            listening_hashes[pid] = {
+                                "path": real_exe,
+                                "sha256": h
+                            }
+            except Exception:
+                continue
+    triage["processes"]["listening_binary_hashes"] = listening_hashes
+
+    return triage
+
+def main():
+    parser = argparse.ArgumentParser(description="Live volatile triage collector for field DFIR")
+    parser.add_argument("--case", help="Case name to store triage under")
+    parser.add_argument("--out", help="Directory to save triage archive")
+    parser.add_argument("--dry-run", action="store_true", help="Print collected facts without writing files")
+    parser.add_argument("--json", action="store_true", help="Output summary JSON to stdout")
+    args = parser.parse_args()
+
+    # Determine output directory
+    out_dir = None
+    if args.out:
+        out_dir = Path(args.out)
+    else:
+        # Check active case
+        case_cmd = ["jarvos-case", "active", "--path"]
+        if args.case:
+            case_cmd = ["jarvos-case", "path", args.case]
+        try:
+            case_path = subprocess.check_output(case_cmd, text=True).strip()
+            if case_path and os.path.isdir(case_path):
+                out_dir = Path(case_path) / "evidence" / "triage"
+        except Exception:
+            pass
+
+    if not out_dir:
+        out_dir = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "jarvos" / "triage"
+
+    triage_data = collect_triage()
+
+    if args.dry_run:
+        print(f"=== TRIAGE DRY-RUN ({triage_data['metadata']['hostname']}) ===")
+        print(f"Timestamp: {triage_data['metadata']['timestamp']}")
+        print(f"Kernel:    {triage_data['metadata']['kernel']}")
+        print(f"Deleted Exe Running: {len(triage_data['processes']['deleted_executables'])}")
+        print(f"Listening Ports Identified: {len(triage_data['processes']['listening_binary_hashes'])}")
+        if args.json:
+            print(json.dumps(triage_data, indent=2))
+        return
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_name = f"triage_{triage_data['metadata']['hostname']}_{ts}"
+    json_path = out_dir / f"{base_name}.json"
+    tar_path = out_dir / f"{base_name}.tar.gz"
+
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(triage_data, f, indent=2)
+
+    with tarfile.open(tar_path, "w:gz") as tar:
+        tar.add(json_path, arcname=json_path.name)
+
+    if args.json:
+        summary = {
+            "hostname": triage_data["metadata"]["hostname"],
+            "timestamp": triage_data["metadata"]["timestamp"],
+            "json_path": str(json_path),
+            "tar_path": str(tar_path),
+            "deleted_executables_count": len(triage_data["processes"]["deleted_executables"]),
+            "listening_hashes_count": len(triage_data["processes"]["listening_binary_hashes"])
+        }
+        print(json.dumps(summary, indent=2))
+    else:
+        print(f"Triage collected successfully:")
+        print(f"  JSON:    {json_path}")
+        print(f"  Archive: {tar_path}")
+        print(f"  Deleted Executables: {len(triage_data['processes']['deleted_executables'])}")
+        print(f"  Listening Binaries Hashed: {len(triage_data['processes']['listening_binary_hashes'])}")
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+# jarvos-agent <agent> [--prompt <text>] [--here] [--canonical <name>]
+#
+# jarvos:summary=Launch an AI coding agent in a terminal and record the session
+# jarvos:args=[--prompt <text>] <agent>
+# jarvos:examples=jarvos-agent claude | jarvos-agent codex --prompt "fix the bug"
+
+set -euo pipefail
+
+# shellcheck source=lib/jarvos-common.sh
+_lib="$(dirname "$(realpath "$0")")/../lib/jarvos-common.sh"
+if [[ -r "$_lib" ]]; then source "$_lib"; else source /usr/share/jarvos/lib/jarvos-common.sh; fi
+unset _lib
+
+canonical_agent() {
+    case "$1" in
+        claude | claude-code) echo "claude" ;;
+        codex | openai-codex) echo "codex" ;;
+        opencode | open-code) echo "opencode" ;;
+        antigravity | agy) echo "antigravity" ;;
+        claude-desktop | desktop) echo "claude-desktop" ;;
+        *) return 1 ;;
+    esac
+}
+
+if [[ "${1-}" == "--canonical" ]]; then
+    shift
+    [[ $# -ge 1 ]] || die "missing agent name for --canonical"
+    name="$(canonical_agent "$1")" || die "unknown agent: $1"
+    printf '%s\n' "$name"
+    exit 0
+fi
+
+if [[ "${1-}" == "-h" || "${1-}" == "--help" || $# -eq 0 ]]; then
+    sed -n '2,6p' "$0"
+    exit 0
+fi
+
+AGENT_ARG=""
+PROMPT=""
+RUN_HERE=0
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --prompt)
+            shift
+            [[ $# -gt 0 ]] || die "--prompt requires text"
+            PROMPT="$1"
+            shift
+            ;;
+        --here)
+            RUN_HERE=1
+            shift
+            ;;
+        *)
+            if [[ -z "$AGENT_ARG" ]]; then
+                AGENT_ARG="$1"
+            else
+                die "unexpected argument: $1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+[[ -n "$AGENT_ARG" ]] || die "no agent specified (available: claude, codex, opencode, antigravity, claude-desktop)"
+AGENT="$(canonical_agent "$AGENT_ARG")" || die "unknown agent: $AGENT_ARG (available: claude, codex, opencode, antigravity, claude-desktop)"
+
+# Working directory
+CWD="$PWD"
+if [[ "$CWD" == "$HOME" || "$CWD" == "/" ]]; then
+    if [[ -n "${JARVOS_PATH:-}" && -d "$JARVOS_PATH" ]]; then
+        CWD="$JARVOS_PATH"
+    fi
+fi
+
+TASK="${PROMPT:-$CWD}"
+STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/jarvos/agents"
+mkdir -p "$RUNTIME_DIR"
+
+write_session() {
+    local spid="$1"
+    local sfile="$RUNTIME_DIR/$spid.json"
+    cat >"$sfile" <<JSON
+{
+  "agent": "$AGENT",
+  "pid": $spid,
+  "cwd": "$CWD",
+  "started": "$STARTED",
+  "task": "$TASK"
+}
+JSON
+}
+
+# Resolve binary
+case "$AGENT" in
+    claude)
+        BIN="claude"
+        ;;
+    codex)
+        BIN="codex"
+        ;;
+    opencode)
+        BIN="opencode"
+        ;;
+    antigravity)
+        if command -v antigravity >/dev/null 2>&1; then
+            BIN="antigravity"
+        elif command -v agy >/dev/null 2>&1; then
+            BIN="agy"
+        else
+            BIN="antigravity"
+        fi
+        ;;
+    claude-desktop)
+        BIN="claude-desktop-native"
+        ;;
+esac
+
+# Launch GUI agent
+if [[ "$AGENT" == "claude-desktop" ]]; then
+    "$BIN" -enable-features=UseOzonePlatform -ozone-platform=wayland &
+    PID=$!
+    write_session "$PID"
+    exit 0
+fi
+
+# Arguments for CLI agents
+CMD_ARGS=()
+if [[ -n "$PROMPT" ]]; then
+    CMD_ARGS+=("$PROMPT")
+fi
+
+if [[ "$RUN_HERE" -eq 1 ]]; then
+    write_session "$$"
+    exec "$BIN" "${CMD_ARGS[@]}"
+fi
+
+# Launch in terminal
+LAUNCHED=0
+for term in "kitty" "foot" "alacritty" "wezterm" "konsole" "kgx" "uxterm" "xterm"; do
+    if command -v "$term" >/dev/null 2>&1; then
+        case "$term" in
+            kitty)
+                kitty --directory "$CWD" --title "JarvOS Agent: $AGENT" -- "$BIN" "${CMD_ARGS[@]}" &
+                PID=$!
+                ;;
+            foot)
+                foot -D "$CWD" -T "JarvOS Agent: $AGENT" "$BIN" "${CMD_ARGS[@]}" &
+                PID=$!
+                ;;
+            alacritty)
+                alacritty --working-directory "$CWD" --title "JarvOS Agent: $AGENT" -e "$BIN" "${CMD_ARGS[@]}" &
+                PID=$!
+                ;;
+            wezterm)
+                wezterm start --cwd "$CWD" "$BIN" "${CMD_ARGS[@]}" &
+                PID=$!
+                ;;
+            *)
+                "$term" -e "$BIN" "${CMD_ARGS[@]}" &
+                PID=$!
+                ;;
+        esac
+        write_session "$PID"
+        LAUNCHED=1
+        break
+    fi
+done
+
+[[ "$LAUNCHED" -eq 1 ]] || die "no supported terminal found (tried: kitty, foot, alacritty, wezterm, konsole, kgx, xterm)"

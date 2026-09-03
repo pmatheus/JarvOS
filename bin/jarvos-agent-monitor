@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+# jarvos:summary=Zero-latency reactive monitor for AI agent sessions via pidfd, inotify, and Hyprland IPC
+# jarvos:args=
+# jarvos:examples=jarvos-agent-monitor
+
+import ctypes
+import glob
+import json
+import os
+import select
+import socket
+import sys
+import time
+
+KNOWN_AGENTS = {"claude", "codex", "opencode", "antigravity", "agy"}
+
+# inotify constants
+libc = ctypes.CDLL(None)
+IN_NONBLOCK = 0x00000800
+IN_CLOEXEC = 0x00080000
+IN_CREATE = 0x00000100
+IN_DELETE = 0x00000200
+IN_CLOSE_WRITE = 0x00000008
+
+def setup_inotify(runtime_dir):
+    try:
+        ifd = libc.inotify_init1(IN_NONBLOCK | IN_CLOEXEC)
+        if ifd < 0:
+            return None
+        wd = libc.inotify_add_watch(ifd, runtime_dir.encode("utf-8"), IN_CREATE | IN_DELETE | IN_CLOSE_WRITE)
+        if wd < 0:
+            os.close(ifd)
+            return None
+        return ifd
+    except Exception:
+        return None
+
+def get_active_sessions(runtime_dir):
+    sessions = {}
+    # 1. Registered sessions
+    if os.path.isdir(runtime_dir):
+        for fpath in glob.glob(os.path.join(runtime_dir, "*.json")):
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                pid = int(data.get("pid", 0))
+                if pid > 0 and os.path.exists(f"/proc/{pid}"):
+                    sessions[pid] = {
+                        "agent": data.get("agent", "unknown"),
+                        "pid": pid,
+                        "cwd": data.get("cwd", ""),
+                        "started": data.get("started", ""),
+                        "task": data.get("task", data.get("cwd", ""))
+                    }
+                else:
+                    try:
+                        os.unlink(fpath)
+                    except OSError:
+                        pass
+            except Exception:
+                pass
+
+    # 2. Unrecorded live processes
+    try:
+        for p in glob.glob("/proc/[0-9]*"):
+            try:
+                pid = int(os.path.basename(p))
+                if pid in sessions:
+                    continue
+                with open(f"{p}/comm", "r", encoding="utf-8") as cf:
+                    comm = cf.read().strip()
+                if comm in KNOWN_AGENTS:
+                    with open(f"{p}/cmdline", "r", encoding="utf-8", errors="ignore") as cmdf:
+                        cmdline = cmdf.read().split("\0")
+                    if any("--chrome-native-host" in arg for arg in cmdline):
+                        continue
+                    cwd = ""
+                    try:
+                        cwd = os.readlink(f"{p}/cwd")
+                    except OSError:
+                        pass
+                    agent_name = "antigravity" if comm == "agy" else comm
+                    task_desc = cwd if cwd else " ".join([c for c in cmdline if c][:2])
+                    sessions[pid] = {
+                        "agent": agent_name,
+                        "pid": pid,
+                        "cwd": cwd,
+                        "started": "",
+                        "task": task_desc
+                    }
+            except (ValueError, FileNotFoundError, PermissionError, ProcessLookupError):
+                continue
+    except Exception:
+        pass
+
+    return sorted(sessions.values(), key=lambda s: (s["agent"], s["pid"]))
+
+def main():
+    xdg = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    runtime_dir = os.path.expanduser(f"{xdg}/jarvos/agents")
+    os.makedirs(runtime_dir, exist_ok=True)
+
+    ep = select.epoll()
+    watched_pids = {}  # pid -> pidfd
+
+    # Inotify watch on runtime_dir
+    ifd = setup_inotify(runtime_dir)
+    if ifd:
+        ep.register(ifd, select.EPOLLIN)
+
+    # Hyprland socket2 connection
+    hypr_sock = None
+    sig = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", "")
+    sock_path = os.path.join(xdg, "hypr", sig, ".socket2.sock")
+    
+    if sig and os.path.exists(sock_path):
+        try:
+            hypr_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            hypr_sock.connect(sock_path)
+            hypr_sock.setblocking(False)
+            ep.register(hypr_sock.fileno(), select.EPOLLIN)
+        except Exception:
+            hypr_sock = None
+
+    def update_pids(current_sessions):
+        current_pids = {s["pid"] for s in current_sessions}
+        
+        # Unregister dead pids
+        for pid in list(watched_pids.keys()):
+            if pid not in current_pids:
+                pidfd = watched_pids.pop(pid)
+                try:
+                    ep.unregister(pidfd)
+                    os.close(pidfd)
+                except Exception:
+                    pass
+
+        # Register new pids via pidfd_open
+        for pid in current_pids:
+            if pid not in watched_pids:
+                try:
+                    pidfd = os.pidfd_open(pid, 0)
+                    ep.register(pidfd, select.EPOLLIN)
+                    watched_pids[pid] = pidfd
+                except Exception:
+                    pass
+
+    # Initial state
+    sessions = get_active_sessions(runtime_dir)
+    update_pids(sessions)
+    sys.stdout.write(json.dumps(sessions) + "\n")
+    sys.stdout.flush()
+    last_emitted = json.dumps(sessions)
+
+    while True:
+        try:
+            # Block in kernel waiting for process death, inotify, or Hyprland event
+            # Fallback timeout 30s to stay robust against any unexpected drift
+            events = ep.poll(timeout=30.0)
+
+            # Drain Hyprland socket
+            if hypr_sock:
+                try:
+                    while True:
+                        chunk = hypr_sock.recv(4096)
+                        if not chunk:
+                            break
+                except (BlockingIOError, socket.error):
+                    pass
+
+            # Drain inotify buffer
+            if ifd:
+                try:
+                    os.read(ifd, 4096)
+                except (BlockingIOError, OSError):
+                    pass
+
+            # Small 20ms debounce to let filesystem/proc settle
+            time.sleep(0.02)
+
+            sessions = get_active_sessions(runtime_dir)
+            update_pids(sessions)
+
+            current_json = json.dumps(sessions)
+            if current_json != last_emitted:
+                sys.stdout.write(current_json + "\n")
+                sys.stdout.flush()
+                last_emitted = current_json
+
+        except KeyboardInterrupt:
+            break
+        except Exception:
+            time.sleep(1.0)
+
+    # Cleanup
+    for pidfd in watched_pids.values():
+        try:
+            os.close(pidfd)
+        except Exception:
+            pass
+    if ifd:
+        try:
+            os.close(ifd)
+        except Exception:
+            pass
+    if hypr_sock:
+        try:
+            hypr_sock.close()
+        except Exception:
+            pass
+    ep.close()
+
+if __name__ == "__main__":
+    main()

@@ -98,9 +98,10 @@ assert_status "$RUN_STATUS" 0 &&
     assert_stdout_contains "$RUN_OUT" "vpn-work" &&
     pass_test
 
-start_test "and SAML uses an isolated browser instead of the broken WebKit view"
-assert_stdout_contains "$RUN_OUT" "--browser" &&
-    assert_stdout_contains "$RUN_OUT" "jarvos-vpn-browser" &&
+start_test "and SAML uses gpauth with builtin browser to preserve Entra ID session"
+assert_stdout_contains "$RUN_OUT" "gpauth" &&
+    assert_stdout_contains "$RUN_OUT" "--cookie-on-stdin" &&
+    assert_not_contains "$RUN_OUT" "jarvos-vpn-browser" &&
     pass_test
 
 start_test "the isolated browser forces a fresh Entra session"
@@ -123,7 +124,7 @@ printf '%s\n' "${CISCO_SPLIT_DNS:-}" >"$FAKE_STATE/split-dns"
 EOF
 cat >"$FAKE_BIN/resolvectl" <<'EOF'
 #!/usr/bin/env bash
-printf '%s\n' "$*" >"$FAKE_STATE/resolvectl-argv"
+printf '%s\n' "$*" >> "$FAKE_STATE/resolvectl-argv"
 EOF
 chmod +x "$FAKE_BIN/upstream-vpnc-script" "$FAKE_BIN/resolvectl"
 export JARVOS_VPN_UPSTREAM_SCRIPT="$FAKE_BIN/upstream-vpnc-script"
@@ -132,9 +133,9 @@ export reason=connect
 export TUNDEV=vpn-mte
 run_cmd jarvos-vpnc-script
 unset JARVOS_VPN_UPSTREAM_SCRIPT JARVOS_VPN_DNS_DOMAINS reason TUNDEV
-assert_status "$RUN_STATUS" 0 &&
-    assert_contains "$FAKE_STATE/split-dns" "mte.example,trabalho.example" &&
+    assert_contains "$FAKE_STATE/split-dns" "~mte.example,~trabalho.example" &&
     assert_contains "$FAKE_STATE/resolvectl-argv" "default-route vpn-mte no" &&
+    assert_contains "$FAKE_STATE/resolvectl-argv" "domain vpn-mte ~mte.example ~trabalho.example" &&
     pass_test
 
 start_test "Fortinet dispatches to openconnect with its protocol"
@@ -289,12 +290,13 @@ assert_contains "$FAKE_STATE/secret-tool-argv" "jarvos-vpn" &&
 
 # --- connect: SSO vs password --------------------------------------------
 
-start_test "a GlobalProtect SSO profile uses the external browser callback"
+start_test "a GlobalProtect SSO profile pipes gpauth into gpclient connect with cookie-on-stdin"
 run_cmd jarvos-vpn connect mte --dry-run
 assert_status "$RUN_STATUS" 0 &&
+    assert_stdout_contains "$RUN_OUT" "gpauth" &&
     assert_stdout_contains "$RUN_OUT" "gpclient" &&
-    assert_stdout_contains "$RUN_OUT" "connect" &&
-    assert_stdout_contains "$RUN_OUT" "jarvos-vpn-browser" &&
+    assert_stdout_contains "$RUN_OUT" "--cookie-on-stdin" &&
+    assert_not_contains "$RUN_OUT" "jarvos-vpn-browser" &&
     { [[ "$RUN_OUT" != *passwd-on-stdin* ]] || fail_test "an SSO profile asked for a password"; } &&
     pass_test
 
@@ -304,6 +306,15 @@ mv "$PROFILES.tmp" "$PROFILES"
 run_cmd jarvos-vpn connect mte --dry-run
 assert_status "$RUN_STATUS" 0 &&
     assert_stdout_contains "$RUN_OUT" "--gateway primary.example" &&
+    pass_test
+
+start_test "a GlobalProtect profile with asGateway authenticates and connects as gateway"
+jq 'map(if .name == "mte" then . + {"asGateway": true} else . end)' "$PROFILES" >"$PROFILES.tmp"
+mv "$PROFILES.tmp" "$PROFILES"
+run_cmd jarvos-vpn connect mte --dry-run
+assert_status "$RUN_STATUS" 0 &&
+    assert_stdout_contains "$RUN_OUT" "gpauth vpn.mte.example --gateway" &&
+    assert_stdout_contains "$RUN_OUT" "--as-gateway" &&
     pass_test
 
 start_test "a GlobalProtect profile passes its split DNS domains to the wrapper"

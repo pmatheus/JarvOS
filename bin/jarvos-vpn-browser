@@ -5,9 +5,25 @@
 
 set -euo pipefail
 
+runner=()
+if [[ $EUID -eq 0 && -n "${SUDO_USER:-}" ]]; then
+    runner=(sudo -u "$SUDO_USER" -E)
+    # Ensure gpclient's callback port file in /tmp is readable by SUDO_USER
+    [[ -f /tmp/gpcallback.port ]] && chmod 644 /tmp/gpcallback.port 2>/dev/null || true
+    (
+        for _ in {1..100}; do
+            if [[ -f /tmp/gpcallback.port ]]; then
+                chmod 644 /tmp/gpcallback.port 2>/dev/null || true
+                break
+            fi
+            sleep 0.05
+        done
+    ) &
+fi
+
 for candidate in google-chrome-stable google-chrome chromium; do
     if command -v "$candidate" >/dev/null 2>&1; then
-        exec "$candidate" --incognito --new-window --no-first-run --no-default-browser-check "$@"
+        exec "${runner[@]}" "$candidate" --incognito --new-window --no-first-run --no-default-browser-check "$@"
     fi
 done
 

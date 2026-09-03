@@ -40,6 +40,10 @@ JsonObject {
             enabled: true
         },
         {
+            id: "agentStatus",
+            enabled: true
+        },
+        {
             id: "tray",
             enabled: true
         },

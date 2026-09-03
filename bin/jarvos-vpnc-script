@@ -12,15 +12,36 @@ if [[ ! -x "$UPSTREAM_SCRIPT" ]]; then
     exit 1
 fi
 
+_routed_domains=()
 if [[ -n "$DNS_DOMAINS" ]]; then
-    export CISCO_SPLIT_DNS="$DNS_DOMAINS"
+    # Format as route-only domains (~domain1,~domain2) so systemd-resolved
+    # routes corporate queries through the tunnel DNS without polluting
+    # the search list or global resolver configuration.
+    IFS=',' read -ra _raw_domains <<< "$DNS_DOMAINS"
+    for _d in "${_raw_domains[@]}"; do
+        [[ -z "$_d" ]] && continue
+        if [[ "$_d" == ~* ]]; then
+            _routed_domains+=("$_d")
+        else
+            _routed_domains+=("~$_d")
+        fi
+    done
+    CISCO_SPLIT_DNS="$(IFS=','; echo "${_routed_domains[*]}")"
+    export CISCO_SPLIT_DNS
 fi
 
 "$UPSTREAM_SCRIPT" "$@"
 status=$?
 
 if (( status == 0 )) && [[ -n "$DNS_DOMAINS" && "${reason:-}" == "connect" && -n "${TUNDEV:-}" ]]; then
-    resolvectl default-route "$TUNDEV" no
+    if command -v resolvectl >/dev/null 2>&1; then
+        resolvectl default-route "$TUNDEV" no 2>/dev/null || true
+        resolvectl domain "$TUNDEV" "${_routed_domains[@]}" 2>/dev/null || true
+    fi
+elif [[ "${reason:-}" == "disconnect" && -n "${TUNDEV:-}" ]]; then
+    if command -v resolvectl >/dev/null 2>&1; then
+        resolvectl revert "$TUNDEV" 2>/dev/null || true
+    fi
 fi
 
 exit "$status"
