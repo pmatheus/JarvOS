@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+# jarvos:summary=Focus the Hyprland window running a specific agent session
+# jarvos:args=<pid>
+# jarvos:examples=jarvos-agent-focus 453476
+
+import json
+import os
+import subprocess
+import sys
+
+def main():
+    if len(sys.argv) < 2:
+        print("usage: jarvos-agent-focus <pid>", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        target_pid = int(sys.argv[1])
+    except ValueError:
+        print(f"invalid pid: {sys.argv[1]}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        clients_json = subprocess.check_output(["hyprctl", "clients", "-j"], text=True)
+        clients = json.loads(clients_json)
+    except Exception as e:
+        print(f"failed to query hyprctl clients: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Collect ancestors from target_pid up to init
+    ancestors = []
+    curr = target_pid
+    while curr > 1:
+        ancestors.append(curr)
+        try:
+            with open(f"/proc/{curr}/stat", "r") as f:
+                fields = f.read().split()
+                ppid = int(fields[3])
+            curr = ppid
+        except Exception:
+            break
+
+    # Find candidate windows whose PID matches an ancestor (closest ancestor first)
+    candidate_windows = []
+    for anc in ancestors:
+        wins = [c for c in clients if c.get("pid") == anc]
+        if wins:
+            candidate_windows = wins
+            break
+
+    if not candidate_windows:
+        print(f"no Hyprland window found for process {target_pid}", file=sys.stderr)
+        sys.exit(1)
+
+    matched_window = None
+    if len(candidate_windows) == 1:
+        matched_window = candidate_windows[0]
+    else:
+        # Disambiguate among multiple windows with the same PID (e.g. Kitty or VS Code)
+        cwd = ""
+        task = ""
+        agent = ""
+        runtime_dir = f"/run/user/{os.getuid()}/jarvos/agents"
+        sfile = os.path.join(runtime_dir, f"{target_pid}.json")
+        if os.path.exists(sfile):
+            try:
+                with open(sfile) as f:
+                    data = json.load(f)
+                    cwd = data.get("cwd", "")
+                    task = data.get("task", "")
+                    agent = data.get("agent", "")
+            except Exception:
+                pass
+        if not cwd:
+            try:
+                cwd = os.readlink(f"/proc/{target_pid}/cwd")
+            except Exception:
+                pass
+        if not agent:
+            try:
+                with open(f"/proc/{target_pid}/comm") as f:
+                    agent = f.read().strip()
+            except Exception:
+                pass
+
+        cwd_base = os.path.basename(cwd) if cwd else ""
+
+        # Gather possible session titles if it's Claude
+        claude_titles = []
+        if "claude" in agent.lower():
+            import glob
+            for proj in glob.glob(os.path.expanduser("~/.claude/projects/*")):
+                for jf in glob.glob(os.path.join(proj, "*.jsonl")):
+                    try:
+                        with open(jf, "rb") as f:
+                            for line in f:
+                                if b'"type":"ai-title"' in line:
+                                    t_data = json.loads(line)
+                                    t = t_data.get("aiTitle")
+                                    if t and t not in claude_titles:
+                                        claude_titles.append(t)
+                    except Exception:
+                        pass
+
+        def score_window(w):
+            pts = 0
+            w_title = w.get("title", "")
+            w_class = w.get("class", "").lower()
+
+            for t in claude_titles[:15]:
+                if t and t.lower() in w_title.lower():
+                    pts += 100
+                    break
+
+            if task and task.lower() in w_title.lower():
+                pts += 80
+
+            if cwd_base and len(cwd_base) > 2 and cwd_base.lower() in w_title.lower():
+                pts += 50
+
+            if cwd and len(cwd) > 3 and cwd.lower() in w_title.lower():
+                pts += 40
+
+            if agent and agent.lower() in w_title.lower():
+                pts += 20
+
+            return pts
+
+        ranked = sorted(candidate_windows, key=score_window, reverse=True)
+        matched_window = ranked[0]
+
+    address = matched_window.get("address")
+    ws = matched_window.get("workspace", {}).get("name", "")
+
+    # Switch workspace/monitor first
+    if ws.startswith("special:"):
+        special_name = ws.split(":", 1)[1]
+        subprocess.run(["hyprctl", "dispatch", "togglespecialworkspace", special_name], check=False)
+    elif ws:
+        subprocess.run(["hyprctl", "dispatch", "workspace", ws], check=False)
+
+    if address:
+        subprocess.run(["hyprctl", "dispatch", "focuswindow", f"address:{address}"], check=False)
+        print(f"focused window {matched_window.get('class')} ({address}) on workspace {ws}")
+    else:
+        win_pid = matched_window.get("pid")
+        subprocess.run(["hyprctl", "dispatch", "focuswindow", f"pid:{win_pid}"], check=False)
+        print(f"focused window pid {win_pid} on workspace {ws}")
+
+if __name__ == "__main__":
+    main()

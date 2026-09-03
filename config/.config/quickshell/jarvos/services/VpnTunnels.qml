@@ -309,11 +309,11 @@ Singleton {
                 return;
             }
 
-            if (/browser|Open the following URL|authentication URL/i.test(tail))
+            if (/browser|Open the following URL|authentication URL|Raising auth window/i.test(tail))
                 session.stage = "browser";
-            else if (/Connected as |Configured as |ESP session|DTLS|Established|Connected to the gateway/i.test(tail))
+            else if (/Connected as |Configured as |ESP session|DTLS|Established|Connected to the gateway|Connected to VPN/i.test(tail))
                 session.stage = "tunnel";
-            else if (/Connected to |GET https|POST https|SSL negotiation/i.test(tail))
+            else if (/Connected to |GET https|POST https|SSL negotiation|prelogin/i.test(tail))
                 session.stage = "portal";
             session.stateChanged();
             root._refreshSessionViews();

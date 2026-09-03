@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+# jarvos:summary=Manage threat hunting and DFIR case contexts
+# jarvos:args=[list|active|select|new|path]
+# jarvos:examples=jarvos-case list | jarvos-case active | jarvos-case select mte | jarvos-case new incident-2026
+
+set -euo pipefail
+
+# shellcheck source=lib/jarvos-common.sh
+_lib="$(dirname "$(realpath "$0")")/../lib/jarvos-common.sh"
+if [[ -r "$_lib" ]]; then source "$_lib"; else source /usr/share/jarvos/lib/jarvos-common.sh; fi
+unset _lib
+
+resolve_cases_root() {
+    if [[ -n "${JARVOS_CASES_DIR:-}" && -d "$JARVOS_CASES_DIR" ]]; then
+        echo "$JARVOS_CASES_DIR"
+    elif [[ -d "/home/user/hd10tb/cases" ]]; then
+        echo "/home/user/hd10tb/cases"
+    else
+        local fallback="${HOME}/cases"
+        mkdir -p "$fallback"
+        echo "$fallback"
+    fi
+}
+
+CASES_ROOT="$(resolve_cases_root)"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/jarvos/case"
+ACTIVE_FILE="$STATE_DIR/active"
+mkdir -p "$STATE_DIR"
+
+get_active_case() {
+    if [[ -s "$ACTIVE_FILE" ]]; then
+        local candidate
+        candidate="$(cat "$ACTIVE_FILE")"
+        if [[ -d "$CASES_ROOT/$candidate" ]]; then
+            echo "$candidate"
+            return 0
+        fi
+    fi
+    # Default to first non-dot directory or empty
+    for d in "$CASES_ROOT"/*/; do
+        if [[ -d "$d" ]]; then
+            local b
+            b="$(basename "$d")"
+            if [[ "$b" != .* ]]; then
+                echo "$b"
+                return 0
+            fi
+        fi
+    done
+    echo ""
+}
+
+cmd="${1:-active}"
+shift || true
+
+case "$cmd" in
+    list)
+        format="text"
+        for arg in "$@"; do
+            [[ "$arg" == "--json" ]] && format="json"
+        done
+
+        active="$(get_active_case)"
+        python3 - "$CASES_ROOT" "$active" "$format" << 'PYEOF'
+import os
+import sys
+import json
+import glob
+from datetime import datetime
+
+root_dir = sys.argv[1]
+active_case = sys.argv[2]
+fmt = sys.argv[3]
+
+cases = []
+if os.path.isdir(root_dir):
+    for entry in sorted(os.listdir(root_dir)):
+        if entry.startswith("."):
+            continue
+        full_path = os.path.join(root_dir, entry)
+        if os.path.isdir(full_path):
+            mtime = os.path.getmtime(full_path)
+            dt_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+            cases.append({
+                "name": entry,
+                "path": full_path,
+                "modified": dt_str,
+                "active": (entry == active_case)
+            })
+
+if fmt == "json":
+    print(json.dumps(cases, indent=2))
+else:
+    if not cases:
+        print("No cases found in " + root_dir)
+        sys.exit(0)
+    print(f"{'STATUS':<8} {'CASE NAME':<24} {'MODIFIED':<18} {'PATH'}")
+    print(f"{'-'*8} {'-'*24} {'-'*18} {'-'*30}")
+    for c in cases:
+        status = "* ACTIVE" if c["active"] else "  "
+        print(f"{status:<8} {c['name']:<24} {c['modified']:<18} {c['path']}")
+PYEOF
+        ;;
+
+    active)
+        want_path=0
+        for arg in "$@"; do
+            [[ "$arg" == "--path" ]] && want_path=1
+        done
+        active="$(get_active_case)"
+        if [[ -z "$active" ]]; then
+            echo "No active case set." >&2
+            exit 1
+        fi
+        if (( want_path )); then
+            echo "$CASES_ROOT/$active"
+        else
+            echo "$active"
+        fi
+        ;;
+
+    select|switch)
+        target="${1:-}"
+        if [[ -z "$target" ]]; then
+            # Interactive selection
+            cases=()
+            for d in "$CASES_ROOT"/*/; do
+                [[ -d "$d" ]] || continue
+                b="$(basename "$d")"
+                [[ "$b" == .* ]] && continue
+                cases+=("$b")
+            done
+            if command -v fuzzel >/dev/null 2>&1 && [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+                target="$(printf '%s\n' "${cases[@]}" | fuzzel --dmenu -p "Select Active Case: " || true)"
+            else
+                select opt in "${cases[@]}"; do
+                    target="$opt"
+                    break
+                done
+            fi
+        fi
+
+        [[ -n "$target" ]] || die "no case selected"
+        [[ -d "$CASES_ROOT/$target" ]] || die "case directory does not exist: $CASES_ROOT/$target"
+
+        echo "$target" > "$ACTIVE_FILE"
+        printf 'Active case set to: %s (%s/%s)\n' "$target" "$CASES_ROOT" "$target"
+        ;;
+
+    new)
+        name="${1:-}"
+        [[ -n "$name" ]] || die "usage: jarvos-case new <name>"
+        target_dir="$CASES_ROOT/$name"
+        [[ ! -e "$target_dir" ]] || die "case already exists: $target_dir"
+
+        mkdir -p "$target_dir"/{artifacts,evidence/triage,hunt,iocs,reports,notes}
+        cat << CASEEOF > "$target_dir/CASE.md"
+# Case: $name
+
+- **Created:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+- **Analyst:** ${USER:-user}
+- **Status:** ACTIVE
+- **Location:** $target_dir
+
+## Objectives
+- [ ] Initial live artifact and volatile state triage
+- [ ] IOC extraction and threat hypothesis validation
+- [ ] Timeline synthesis and threat hunt reporting
+CASEEOF
+
+        echo "$name" > "$ACTIVE_FILE"
+        printf 'Created new case: %s\n' "$target_dir"
+        printf 'Active case set to: %s\n' "$name"
+        ;;
+
+    path)
+        name="${1:-$(get_active_case)}"
+        [[ -n "$name" ]] || die "no case specified or active"
+        echo "$CASES_ROOT/$name"
+        ;;
+
+    -h|--help)
+        sed -n '2,4p' "$0"
+        exit 0
+        ;;
+
+    *)
+        die "unknown subcommand: $cmd (use: list, active, select, new, path)"
+        ;;
+esac

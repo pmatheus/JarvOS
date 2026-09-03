@@ -37,6 +37,7 @@ if [[ -r "$_lib" ]]; then source "$_lib"; else source /usr/share/jarvos/lib/jarv
 unset _lib
 
 PROFILES="${JARVOS_VPN_PROFILES:-${XDG_CONFIG_HOME:-$HOME/.config}/jarvos/vpn/profiles.json}"
+# shellcheck disable=SC2034
 VPN_BROWSER_HELPER="${JARVOS_VPN_BROWSER:-$(dirname "$(realpath "$0")")/jarvos-vpn-browser}"
 VPN_SCRIPT_HELPER="${JARVOS_VPN_SCRIPT:-$(dirname "$(realpath "$0")")/jarvos-vpnc-script}"
 
@@ -255,27 +256,53 @@ build_command() {
     local -a cmd
     case "$vendor" in
         globalprotect)
-            # The bundled WebKit view turns black when it receives focus under
-            # Hyprland. The supported browser callback stays in the open-source
-            # CLI: launch-gui with callback data only feeds gpclient's local
-            # socket and exits; it does not start the licensed GUI.
+            local as_gateway
+            as_gateway="$(jq -r '.asGateway // false' <<<"$profile")"
+
+            if [[ "$auth" == "sso" ]]; then
+                # Use gpauth in user space to drive Entra ID SAML authentication.
+                # By default, gpauth uses its builtin browser which preserves Entra ID
+                # session tokens and cookies in ~/.local/share/com.yuezk.gpauth/,
+                # enabling silent session reuse across connections without prompting
+                # until renewal is required.
+                local -a auth_cmd connect_cmd
+                auth_cmd=(gpauth "$server")
+                [[ "$as_gateway" == "true" ]] && auth_cmd+=(--gateway)
+                [[ "$browser" != "default" && "$browser" != "builtin" && -n "$browser" ]] &&
+                    auth_cmd+=(--browser "$browser")
+
+                connect_cmd=(sudo -E)
+                if [[ -n "$dns_domains" ]]; then
+                    [[ "$dns_domains" =~ ^[A-Za-z0-9._-]+(,[A-Za-z0-9._-]+)*$ ]] ||
+                        die "profile dnsDomains contains an invalid domain"
+                    connect_cmd+=(env "JARVOS_VPN_DNS_DOMAINS=$dns_domains")
+                fi
+                connect_cmd+=(gpclient connect "$server" --cookie-on-stdin --script "$VPN_SCRIPT_HELPER" --interface "$iface")
+                if [[ "$as_gateway" == "true" ]]; then
+                    connect_cmd+=(--as-gateway)
+                elif [[ -n "$gateway" ]]; then
+                    connect_cmd+=(--gateway "$gateway")
+                fi
+                [[ -n "$user" ]] && connect_cmd+=(--user "$user")
+                [[ -n "$hip" ]] && connect_cmd+=(--hip "$hip")
+
+                printf '%s | %s\n' "${auth_cmd[*]}" "${connect_cmd[*]}"
+                return 0
+            fi
+
             cmd=(sudo -E)
             if [[ -n "$dns_domains" ]]; then
                 [[ "$dns_domains" =~ ^[A-Za-z0-9._-]+(,[A-Za-z0-9._-]+)*$ ]] ||
                     die "profile dnsDomains contains an invalid domain"
                 cmd+=(env "JARVOS_VPN_DNS_DOMAINS=$dns_domains")
             fi
-            cmd+=(gpclient connect "$server" --script "$VPN_SCRIPT_HELPER")
-            [[ -n "$gateway" ]] && cmd+=(--gateway "$gateway")
-            [[ -n "$user" ]] && cmd+=(--user "$user")
-            if [[ "$auth" == "sso" ]]; then
-                # "default" means a clean Chrome context for GlobalProtect.
-                # This prevents an existing Entra session from skipping the
-                # credential page and landing immediately on Palo Alto's ACS.
-                [[ "$browser" == "default" ]] && browser="$VPN_BROWSER_HELPER"
-                cmd+=(--browser "$browser")
+            cmd+=(gpclient connect "$server" --passwd-on-stdin --script "$VPN_SCRIPT_HELPER" --interface "$iface")
+            if [[ "$as_gateway" == "true" ]]; then
+                cmd+=(--as-gateway)
+            elif [[ -n "$gateway" ]]; then
+                cmd+=(--gateway "$gateway")
             fi
-            cmd+=(--interface "$iface")
+            [[ -n "$user" ]] && cmd+=(--user "$user")
             [[ -n "$hip" ]] && cmd+=(--hip "$hip")
             ;;
         checkpoint)

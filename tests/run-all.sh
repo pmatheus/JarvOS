@@ -28,9 +28,9 @@ done
 
 # SC1090/SC1091: every bin/jarvos-* command locates its library by a computed
 # path with a packaged fallback. That indirection is the point, so shellcheck
-# cannot follow it and the exclusion belongs here rather than in each command.
+# SC1071: bin/ may contain python helpers that shellcheck should ignore.
 printf '\n== shellcheck\n'
-if shellcheck -e SC1090,SC1091 "${lint[@]}"; then
+if shellcheck -e SC1090,SC1091,SC1071 "${lint[@]}"; then
     printf '  ok   no findings\n'
 else
     fail=1

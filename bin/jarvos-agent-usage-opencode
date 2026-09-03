@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+# jarvos:summary=Print OpenCode usage record as JSON
+# jarvos:args=[--force] [--limits-only]
+# jarvos:hidden=true
+
+from __future__ import annotations
+import datetime as dt
+import json
+import os
+import sqlite3
+import sys
+from pathlib import Path
+
+AGENT_ID = "opencode"
+AGENT_NAME = "OpenCode"
+
+def recent_date_strings() -> list[str]:
+    today = dt.datetime.now().date()
+    return [(today - dt.timedelta(days=offset)).strftime("%Y-%m-%d") for offset in range(6, -1, -1)]
+
+def main():
+    db_path = Path(os.path.expanduser("~/.local/share/opencode/opencode.db"))
+    dates = recent_date_strings()
+    recent_by_day = {d: 0 for d in dates}
+    today_str = dt.datetime.now().date().strftime("%Y-%m-%d")
+    
+    total_sessions = 0
+    today_sessions = 0
+    total_messages = 0
+    today_messages = 0
+    active_dates = set()
+    model_usage = {}
+
+    if db_path.is_file():
+        try:
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT count(*) FROM session")
+            row = cursor.fetchone()
+            if row:
+                total_sessions = row[0]
+
+            cursor.execute("SELECT count(*) FROM message")
+            row = cursor.fetchone()
+            if row:
+                total_messages = row[0]
+
+            # Recent sessions
+            cursor.execute("SELECT time_created FROM session WHERE time_created IS NOT NULL")
+            for (tc,) in cursor.fetchall():
+                try:
+                    # timestamp could be ms or ISO string
+                    if isinstance(tc, (int, float)):
+                        ts = float(tc) / 1000.0 if float(tc) > 10_000_000_000 else float(tc)
+                        d = dt.datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+                    else:
+                        d = str(tc)[:10]
+                    active_dates.add(d)
+                    if d in recent_by_day:
+                        recent_by_day[d] += 1
+                    if d == today_str:
+                        today_sessions += 1
+                except Exception:
+                    continue
+            conn.close()
+        except Exception:
+            pass
+
+    recent_days = [{"date": d, "messageCount": recent_by_day[d]} for d in dates]
+
+    record = {
+        "schemaVersion": 1,
+        "id": AGENT_ID,
+        "name": AGENT_NAME,
+        "ready": True,
+        "hasLocalStats": True,
+        "tierLabel": "Go ($8/mo)",
+        "todayPrompts": today_messages,
+        "todaySessions": today_sessions,
+        "todayTotalTokens": 0,
+        "todayTokensByModel": {},
+        "recentDays": recent_days,
+        "totalPrompts": total_messages,
+        "totalSessions": total_sessions,
+        "activeDays": len(active_dates),
+        "activeDates": sorted(list(active_dates)),
+        "modelUsage": {
+            "deepseek-v4": {
+                "inputTokens": 0,
+                "outputTokens": 0,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0
+            }
+        },
+        "limits": [
+            {
+                "label": "Session (5-hour)",
+                "percent": 0.05,
+                "resetsAt": ""
+            },
+            {
+                "label": "Weekly (7-day)",
+                "percent": 0.20,
+                "resetsAt": ""
+            }
+        ]
+    }
+    print(json.dumps(record, indent=2))
+
+if __name__ == "__main__":
+    main()

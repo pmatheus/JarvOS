@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+# jarvos-agent-diagnose <kind> [args...] [--dry-run] [--agent <name>]
+#
+# jarvos:summary=Gather failure facts and hand them to an AI agent for diagnosis
+# jarvos:args=<kind> [args...] [--dry-run] [--agent <name>]
+# jarvos:examples=jarvos-agent-diagnose update --dry-run | jarvos-agent-diagnose crash 1234
+
+set -euo pipefail
+
+# shellcheck source=lib/jarvos-common.sh
+_lib="$(dirname "$(realpath "$0")")/../lib/jarvos-common.sh"
+if [[ -r "$_lib" ]]; then source "$_lib"; else source /usr/share/jarvos/lib/jarvos-common.sh; fi
+unset _lib
+
+SKILL_PATH="${XDG_CONFIG_HOME:-$HOME/.config}/jarvos/agents/skills/diagnose-failure/SKILL.md"
+if [[ ! -r "$SKILL_PATH" && -r "$JARVOS_PATH/config/.config/jarvos/agents/skills/diagnose-failure/SKILL.md" ]]; then
+    SKILL_PATH="$JARVOS_PATH/config/.config/jarvos/agents/skills/diagnose-failure/SKILL.md"
+fi
+
+DRY_RUN=0
+TARGET_AGENT="claude"
+ARGS=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --dry-run)
+            DRY_RUN=1
+            shift
+            ;;
+        --agent)
+            shift
+            [[ $# -gt 0 ]] || die "--agent requires an argument"
+            TARGET_AGENT="$1"
+            shift
+            ;;
+        -h|--help)
+            sed -n '2,6p' "$0"
+            exit 0
+            ;;
+        *)
+            ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+[[ ${#ARGS[@]} -gt 0 ]] || die "missing kind (available: update, crash, migration, shell, hunt, triage)"
+KIND="${ARGS[0]}"
+REMAINING_ARGS=("${ARGS[@]:1}")
+
+PROMPT=""
+
+case "$KIND" in
+    update)
+        LOG="${JARVOS_UPDATE_TRANSCRIPT:-/tmp/jarvos-update.log}"
+        TAIL_OUT=""
+        if [[ -r "$LOG" ]]; then
+            TAIL_OUT="$(tail -n 30 "$LOG" 2>/dev/null || true)"
+        fi
+        PROMPT="Diagnose this JarvOS update failure. Follow the method in $SKILL_PATH.
+
+Update transcript: $LOG
+Recent transcript log:
+$TAIL_OUT"
+        ;;
+    crash)
+        PID="${REMAINING_ARGS[0]:-unknown}"
+        COMM="${REMAINING_ARGS[1]:-unknown}"
+        EXE="${REMAINING_ARGS[2]:-unknown}"
+        SIG="${REMAINING_ARGS[3]:-unknown}"
+        PROMPT="Diagnose this process crash. Follow the method in $SKILL_PATH.
+
+Process PID: $PID
+Command: $COMM
+Executable: $EXE
+Signal: $SIG"
+        ;;
+    migration)
+        NAME="${REMAINING_ARGS[0]:-unknown}"
+        ERR_OUT="${REMAINING_ARGS[1]:-none}"
+        PROMPT="Diagnose this JarvOS migration failure. Follow the method in $SKILL_PATH.
+
+Migration: $NAME
+Output:
+$ERR_OUT"
+        ;;
+    shell)
+        LOG_TAIL="$(journalctl --user -u quickshell-jarvos.service -n 30 2>/dev/null || true)"
+        PROMPT="Diagnose this Quickshell shell failure. Follow the method in $SKILL_PATH.
+
+Recent shell logs:
+$LOG_TAIL"
+        ;;
+    hunt)
+        CASE_NAME="${REMAINING_ARGS[0]:-}"
+        if [[ -z "$CASE_NAME" ]]; then
+            CASE_NAME="$(jarvos-case active 2>/dev/null || true)"
+        fi
+        CASE_PATH="$(jarvos-case path "$CASE_NAME" 2>/dev/null || true)"
+        [[ -d "$CASE_PATH" ]] || die "case not found or inactive: $CASE_NAME"
+
+        RECENT_FILES="$(find "$CASE_PATH" -maxdepth 3 -type f -printf '%T+ %p\n' 2>/dev/null | sort -r | head -n 15 | cut -d' ' -f2- || true)"
+        PROMPT="Execute threat hunting investigation for case: $CASE_NAME.
+Case root: $CASE_PATH
+Invoke threat hunting skills (linux-threat-hunt, memory-forensics, network-forensics).
+
+Recent case evidence and files:
+$RECENT_FILES"
+        ;;
+    triage)
+        TRIAGE_FILE="${REMAINING_ARGS[0]:-}"
+        if [[ -z "$TRIAGE_FILE" ]]; then
+            # Find latest in active case
+            CASE_PATH="$(jarvos-case active --path 2>/dev/null || true)"
+            if [[ -d "$CASE_PATH/evidence/triage" ]]; then
+                TRIAGE_FILE="$(find "$CASE_PATH/evidence/triage" -maxdepth 1 -name "*.json" -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n 1 | cut -d' ' -f2- || true)"
+            fi
+        fi
+        [[ -f "$TRIAGE_FILE" ]] || die "triage file not found: $TRIAGE_FILE"
+
+        SUMMARY="$(python3 -c '
+import json, sys
+data = json.load(open(sys.argv[1]))
+meta = data.get("metadata", {})
+proc = data.get("processes", {})
+deleted = proc.get("deleted_executables", [])
+hashes = proc.get("listening_binary_hashes", {})
+print(f"Host: {meta.get(\"hostname\")} | Kernel: {meta.get(\"kernel\")}")
+print(f"Deleted Exes in Memory: {len(deleted)}")
+for d in deleted[:5]:
+    print(f"  - PID {d.get(\"pid\")}: {d.get(\"target\")} ({d.get(\"cmdline\")})")
+print(f"Listening Binaries Hashed: {len(hashes)}")
+for pid, info in list(hashes.items())[:5]:
+    print(f"  - PID {pid}: {info.get(\"path\")} [{info.get(\"sha256\", \"\")[:16]}...]")
+' "$TRIAGE_FILE" 2>/dev/null || cat "$TRIAGE_FILE" | head -n 30)"
+
+        PROMPT="Analyze live forensic triage anomalies.
+Triage file: $TRIAGE_FILE
+
+Volatile state summary:
+$SUMMARY
+
+Investigate root causes, fileless implants, and establish whether anomalies represent adversary activity."
+        ;;
+    *)
+        die "unknown failure kind: $KIND (available: update, crash, migration, shell, hunt, triage)"
+        ;;
+esac
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+    printf '%s\n' "$PROMPT"
+    exit 0
+fi
+
+exec "$JARVOS_PATH/bin/jarvos-agent" "$TARGET_AGENT" --prompt "$PROMPT"
