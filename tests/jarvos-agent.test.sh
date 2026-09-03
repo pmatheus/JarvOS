@@ -165,4 +165,28 @@ start_test "jarvos-agent-monitor streams initial json state and reacts"
 first_line=$(timeout 2 jarvos-agent-monitor 2>/dev/null | head -n 1 || true)
 { [[ -n "$first_line" ]] && jq -e . >/dev/null 2>&1 <<<"$first_line"; } && pass_test
 
+start_test "jarvos-agent-stratagem banner contains Chinese, English and PT-BR"
+run_cmd jarvos-agent-stratagem banner
+assert_status "$RUN_STATUS" 0 &&
+    assert_stdout_contains "$RUN_OUT" "STRATEGIC SYSTEM DOCTRINE" &&
+    assert_stdout_contains "$RUN_OUT" "中文:" &&
+    assert_stdout_contains "$RUN_OUT" "EN:" &&
+    assert_stdout_contains "$RUN_OUT" "PT-BR:" &&
+    pass_test
+
+start_test "jarvos-agent-stratagem wrap prepends doctrine to prompt"
+run_cmd jarvos-agent-stratagem wrap "investigate breach"
+assert_status "$RUN_STATUS" 0 &&
+    assert_stdout_contains "$RUN_OUT" "STRATEGIC SYSTEM DOCTRINE" &&
+    assert_stdout_contains "$RUN_OUT" "investigate breach" &&
+    pass_test
+
+start_test "jarvos-agent-stratagem all lists all 48 stratagems"
+run_cmd jarvos-agent-stratagem all
+assert_status "$RUN_STATUS" 0 &&
+    assert_stdout_contains "$RUN_OUT" "兵者，诡道也" &&
+    assert_stdout_contains "$RUN_OUT" "走为上" &&
+    pass_test
+
 summary "jarvos-agent"
+

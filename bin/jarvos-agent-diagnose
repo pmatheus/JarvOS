@@ -148,7 +148,11 @@ Investigate root causes, fileless implants, and establish whether anomalies repr
 esac
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
-    printf '%s\n' "$PROMPT"
+    if command -v jarvos-agent-stratagem >/dev/null 2>&1; then
+        jarvos-agent-stratagem wrap "$PROMPT"
+    else
+        printf '%s\n' "$PROMPT"
+    fi
     exit 0
 fi
 

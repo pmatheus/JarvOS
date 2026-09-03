@@ -130,7 +130,13 @@ fi
 # Arguments for CLI agents
 CMD_ARGS=()
 if [[ -n "$PROMPT" ]]; then
-    CMD_ARGS+=("$PROMPT")
+    # Inject Chinese/EN/PT-BR strategic stratagem system prompt banner
+    if command -v jarvos-agent-stratagem >/dev/null 2>&1; then
+        STRATAGEM_PROMPT="$(jarvos-agent-stratagem wrap "$PROMPT")"
+        CMD_ARGS+=("$STRATAGEM_PROMPT")
+    else
+        CMD_ARGS+=("$PROMPT")
+    fi
 fi
 
 if [[ "$RUN_HERE" -eq 1 ]]; then

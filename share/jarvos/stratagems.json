@@ -1,0 +1,386 @@
+[
+  {
+    "id": 1,
+    "cn": "兵者，诡道也",
+    "pinyin": "Bīng zhě, guǐ dào yě",
+    "en": "All warfare is based on deception.",
+    "pt": "Toda guerra é baseada no engano.",
+    "category": "Core Doctrine"
+  },
+  {
+    "id": 2,
+    "cn": "不战而屈人之兵",
+    "pinyin": "Bù zhàn ér qū rén zhī bīng",
+    "en": "Subdue the enemy without fighting.",
+    "pt": "Vencer o inimigo sem travar batalha.",
+    "category": "Core Doctrine"
+  },
+  {
+    "id": 3,
+    "cn": "知己知彼，百战不殆",
+    "pinyin": "Zhī jǐ zhī bǐ, bǎi zhàn bù dài",
+    "en": "Know yourself and your enemy, never lose.",
+    "pt": "Conheça a si mesmo e ao adversário, nunca perca.",
+    "category": "Core Doctrine"
+  },
+  {
+    "id": 4,
+    "cn": "兵贵神速",
+    "pinyin": "Bīng guì shén sù",
+    "en": "In war, speed is everything.",
+    "pt": "Na guerra, a velocidade é primordial.",
+    "category": "Core Doctrine"
+  },
+  {
+    "id": 5,
+    "cn": "攻其无备，出其不意",
+    "pinyin": "Gōng qí wú bèi, chū qí bù yì",
+    "en": "Attack the unprepared, appear unexpected.",
+    "pt": "Ataque onde não há preparo, surja no inesperado.",
+    "category": "Core Doctrine"
+  },
+  {
+    "id": 6,
+    "cn": "致人而不致于人",
+    "pinyin": "Zhì rén ér bù zhì yú rén",
+    "en": "Bring the enemy to you, never the reverse.",
+    "pt": "Faça o inimigo vir até você, nunca o inverso.",
+    "category": "Core Doctrine"
+  },
+  {
+    "id": 7,
+    "cn": "兵无常势，水无常形",
+    "pinyin": "Bīng wú cháng shì, shuǐ wú cháng xíng",
+    "en": "Warfare has no constant form, like water.",
+    "pt": "A guerra não possui forma constante, como a água.",
+    "category": "Core Doctrine"
+  },
+  {
+    "id": 8,
+    "cn": "胜兵先胜而后求战",
+    "pinyin": "Shèng bīng xiān shèng ér hòu qiú zhàn",
+    "en": "The victorious win first, then go to battle.",
+    "pt": "O exército vitorioso assegura a vitória antes de batalhar.",
+    "category": "Core Doctrine"
+  },
+  {
+    "id": 9,
+    "cn": "瞒天过海",
+    "pinyin": "Mán tiān guò hǎi",
+    "en": "Deceive the heavens to cross the sea.",
+    "pt": "Enganar o céu para cruzar o mar.",
+    "category": "Winning Stratagems (胜战计)"
+  },
+  {
+    "id": 10,
+    "cn": "围魏救赵",
+    "pinyin": "Wéi Wèi jiù Zhào",
+    "en": "Besiege Wei to rescue Zhao.",
+    "pt": "Cercar Wei para salvar Zhao.",
+    "category": "Winning Stratagems (胜战计)"
+  },
+  {
+    "id": 11,
+    "cn": "借刀杀人",
+    "pinyin": "Jiè dāo shā rén",
+    "en": "Kill with a borrowed knife.",
+    "pt": "Eliminar com uma lâmina emprestada.",
+    "category": "Winning Stratagems (胜战计)"
+  },
+  {
+    "id": 12,
+    "cn": "以逸待劳",
+    "pinyin": "Yǐ yì dài láo",
+    "en": "Wait at ease for the exhausted enemy.",
+    "pt": "Esperar descansado o inimigo exausto.",
+    "category": "Winning Stratagems (胜战计)"
+  },
+  {
+    "id": 13,
+    "cn": "趁火打劫",
+    "pinyin": "Chèn huǒ dǎ jié",
+    "en": "Loot a burning house.",
+    "pt": "Saquear a casa em chamas.",
+    "category": "Winning Stratagems (胜战计)"
+  },
+  {
+    "id": 14,
+    "cn": "声东击西",
+    "pinyin": "Shēng dōng jī xī",
+    "en": "Make noise in the east, strike in the west.",
+    "pt": "Alardear no leste, atacar no oeste.",
+    "category": "Winning Stratagems (胜战计)"
+  },
+  {
+    "id": 15,
+    "cn": "无中生有",
+    "pinyin": "Wú zhōng shēng yǒu",
+    "en": "Create something out of nothing.",
+    "pt": "Criar algo a partir do nada.",
+    "category": "Enemy Stratagems (敌战计)"
+  },
+  {
+    "id": 16,
+    "cn": "暗渡陈仓",
+    "pinyin": "Àn dù Chén cāng",
+    "en": "March secretly to Chencang.",
+    "pt": "Avançar secretamente por Chencang.",
+    "category": "Enemy Stratagems (敌战计)"
+  },
+  {
+    "id": 17,
+    "cn": "隔岸观火",
+    "pinyin": "Gé àn guān huǒ",
+    "en": "Watch the fire from across the river.",
+    "pt": "Assistir ao fogo da margem oposta.",
+    "category": "Enemy Stratagems (敌战计)"
+  },
+  {
+    "id": 18,
+    "cn": "笑里藏刀",
+    "pinyin": "Xiào lǐ cáng dāo",
+    "en": "Hide the dagger behind a smile.",
+    "pt": "Esconder a lâmina por trás do sorriso.",
+    "category": "Enemy Stratagems (敌战计)"
+  },
+  {
+    "id": 19,
+    "cn": "李代桃僵",
+    "pinyin": "Lǐ dài táo jiāng",
+    "en": "Sacrifice the plum tree to save the peach tree.",
+    "pt": "Sacrificar a ameixeira para preservar o pessegueiro.",
+    "category": "Enemy Stratagems (敌战计)"
+  },
+  {
+    "id": 20,
+    "cn": "顺手牵羊",
+    "pinyin": "Shùn shǒu qiān yáng",
+    "en": "Seize the goat in passing.",
+    "pt": "Levar a ovelha de passagem.",
+    "category": "Enemy Stratagems (敌战计)"
+  },
+  {
+    "id": 21,
+    "cn": "打草惊蛇",
+    "pinyin": "Dǎ cǎo jīng shé",
+    "en": "Beat the grass to startle the snake.",
+    "pt": "Bater na relva para assustar a cobra.",
+    "category": "Offensive Stratagems (攻战计)"
+  },
+  {
+    "id": 22,
+    "cn": "借尸还魂",
+    "pinyin": "Jiè shī huán hún",
+    "en": "Borrow a corpse to resurrect the soul.",
+    "pt": "Pedir um corpo emprestado para reviver a alma.",
+    "category": "Offensive Stratagems (攻战计)"
+  },
+  {
+    "id": 23,
+    "cn": "调虎离山",
+    "pinyin": "Diào hǔ lí shān",
+    "en": "Lure the tiger away from the mountain.",
+    "pt": "Atrair o tigre para fora da montanha.",
+    "category": "Offensive Stratagems (攻战计)"
+  },
+  {
+    "id": 24,
+    "cn": "欲擒故纵",
+    "pinyin": "Yù qín gù zòng",
+    "en": "To capture, first release.",
+    "pt": "Para capturar, primeiro afrouxe o cerco.",
+    "category": "Offensive Stratagems (攻战计)"
+  },
+  {
+    "id": 25,
+    "cn": "抛砖引玉",
+    "pinyin": "Pāo zhuān yǐn yù",
+    "en": "Toss a brick to draw jade.",
+    "pt": "Atirar um tijolo para atrair o jade.",
+    "category": "Offensive Stratagems (攻战计)"
+  },
+  {
+    "id": 26,
+    "cn": "擒贼擒王",
+    "pinyin": "Qín zéi qín wáng",
+    "en": "Catch the ringleader to capture the bandits.",
+    "pt": "Capturar o líder para dispersar o bando.",
+    "category": "Offensive Stratagems (攻战计)"
+  },
+  {
+    "id": 27,
+    "cn": "釜底抽薪",
+    "pinyin": "Fǔ dǐ chōu xīn",
+    "en": "Pull firewood from under the pot.",
+    "pt": "Puxar a lenha debaixo do caldeirão.",
+    "category": "Confusion Stratagems (混战计)"
+  },
+  {
+    "id": 28,
+    "cn": "浑水摸鱼",
+    "pinyin": "Hún shuǐ mō yú",
+    "en": "Catch fish in troubled waters.",
+    "pt": "Pescar em águas turvas.",
+    "category": "Confusion Stratagems (混战计)"
+  },
+  {
+    "id": 29,
+    "cn": "金蝉脱壳",
+    "pinyin": "Jīn chán tuō qiào",
+    "en": "Shed the cicada's golden shell.",
+    "pt": "Desprender-se da casca dourada da cigarra.",
+    "category": "Confusion Stratagems (混战计)"
+  },
+  {
+    "id": 30,
+    "cn": "关门捉贼",
+    "pinyin": "Guān mén zhuō zéi",
+    "en": "Close the door to catch the thief.",
+    "pt": "Fechar a porta para capturar o ladrão.",
+    "category": "Confusion Stratagems (混战计)"
+  },
+  {
+    "id": 31,
+    "cn": "远交近攻",
+    "pinyin": "Yuǎn jiāo jìn gōng",
+    "en": "Befriend the distant, attack the near.",
+    "pt": "Aliar-se ao distante, combater o próximo.",
+    "category": "Confusion Stratagems (混战计)"
+  },
+  {
+    "id": 32,
+    "cn": "假道伐虢",
+    "pinyin": "Jiǎ dào fá Guó",
+    "en": "Borrow the road to conquer Guo.",
+    "pt": "Pedir passagem para conquistar Guo.",
+    "category": "Confusion Stratagems (混战计)"
+  },
+  {
+    "id": 33,
+    "cn": "偷梁换柱",
+    "pinyin": "Tōu liáng huàn zhù",
+    "en": "Swap the beams, switch the pillars.",
+    "pt": "Trocar as vigas e substituir as colunas.",
+    "category": "Transition Stratagems (并战计)"
+  },
+  {
+    "id": 34,
+    "cn": "指桑骂槐",
+    "pinyin": "Zhǐ sāng mà huái",
+    "en": "Point at the mulberry, curse the locust.",
+    "pt": "Apontar para a amoreira e censurar o gafanhoto.",
+    "category": "Transition Stratagems (并战计)"
+  },
+  {
+    "id": 35,
+    "cn": "假痴不癫",
+    "pinyin": "Jiǎ chī bù diān",
+    "en": "Feign madness, stay sharp.",
+    "pt": "Fingir loucura mantendo a lucidez.",
+    "category": "Transition Stratagems (并战计)"
+  },
+  {
+    "id": 36,
+    "cn": "上屋抽梯",
+    "pinyin": "Shàng wū chōu tī",
+    "en": "Climb the roof, then pull the ladder.",
+    "pt": "Subir ao telhado e recolher a escada.",
+    "category": "Transition Stratagems (并战计)"
+  },
+  {
+    "id": 37,
+    "cn": "树上开花",
+    "pinyin": "Shù shàng kāi huā",
+    "en": "Decorate the tree with false flowers.",
+    "pt": "Decorar a árvore com flores postiças.",
+    "category": "Transition Stratagems (并战计)"
+  },
+  {
+    "id": 38,
+    "cn": "反客为主",
+    "pinyin": "Fǎn kè wéi zhǔ",
+    "en": "Turn the guest into the host.",
+    "pt": "Transformar o convidado em anfitrião.",
+    "category": "Transition Stratagems (并战计)"
+  },
+  {
+    "id": 39,
+    "cn": "空城计",
+    "pinyin": "Kōng chéng jì",
+    "en": "The empty city ruse.",
+    "pt": "A estratégia da cidade vazia.",
+    "category": "Desperation Stratagems (败战计)"
+  },
+  {
+    "id": 40,
+    "cn": "反间计",
+    "pinyin": "Fǎn jiàn jì",
+    "en": "Turn their spy against them.",
+    "pt": "Usar o espião contra o adversário.",
+    "category": "Desperation Stratagems (败战计)"
+  },
+  {
+    "id": 41,
+    "cn": "苦肉计",
+    "pinyin": "Kǔ ròu jì",
+    "en": "Wound yourself to win their trust.",
+    "pt": "Ferir a própria carne para ganhar confiança.",
+    "category": "Desperation Stratagems (败战计)"
+  },
+  {
+    "id": 42,
+    "cn": "连环计",
+    "pinyin": "Lián huán jì",
+    "en": "Forge them into a single chain.",
+    "pt": "Prender o inimigo em elos contínuos.",
+    "category": "Desperation Stratagems (败战计)"
+  },
+  {
+    "id": 43,
+    "cn": "走为上",
+    "pinyin": "Zǒu wéi shàng",
+    "en": "When nothing works, retreat.",
+    "pt": "Se tudo falhar, a retirada estratégica é a melhor opção.",
+    "category": "Desperation Stratagems (败战计)"
+  },
+  {
+    "id": 44,
+    "cn": "大道至简",
+    "pinyin": "Dà dào zhì jiǎn",
+    "en": "The great way is simple.",
+    "pt": "O grande caminho é simples.",
+    "category": "Philosophical Foundation"
+  },
+  {
+    "id": 45,
+    "cn": "千里之行，始于足下",
+    "pinyin": "Qiān lǐ zhī xíng, shǐ yú zú xià",
+    "en": "A thousand-mile journey begins with a single step.",
+    "pt": "Uma jornada de mil milhas começa com um único passo.",
+    "category": "Philosophical Foundation"
+  },
+  {
+    "id": 46,
+    "cn": "上善若水",
+    "pinyin": "Shàng shàn ruò shuǐ",
+    "en": "The highest good is like water.",
+    "pt": "A virtude suprema é como a água.",
+    "category": "Philosophical Foundation"
+  },
+  {
+    "id": 47,
+    "cn": "知人者智，自知者明",
+    "pinyin": "Zhī rén zhě zhì, zì zhī zhě míng",
+    "en": "Knowing others is wisdom; knowing yourself, enlightenment.",
+    "pt": "Conhecer os outros é sabedoria; conhecer a si mesmo é iluminação.",
+    "category": "Philosophical Foundation"
+  },
+  {
+    "id": 48,
+    "cn": "柔弱胜刚强",
+    "pinyin": "Róu ruò shèng gāng qiáng",
+    "en": "The soft and weak overcome the hard and strong.",
+    "pt": "A suavidade vence a rigidez.",
+    "category": "Philosophical Foundation"
+  }
+]
