@@ -9,6 +9,7 @@ import json
 import os
 import select
 import socket
+import subprocess
 import sys
 import time
 
@@ -145,9 +146,39 @@ def main():
                 except Exception:
                     pass
 
+    last_usage_update = 0.0
+    active_usage_proc = None
+
+    def maybe_update_usage(current_sessions, force=False):
+        nonlocal last_usage_update, active_usage_proc
+        now = time.time()
+        if active_usage_proc is not None:
+            if active_usage_proc.poll() is not None:
+                active_usage_proc = None
+        if active_usage_proc is None and current_sessions and (force or (now - last_usage_update >= 20.0)):
+            last_usage_update = now
+            lock_path = os.path.join(runtime_dir, ".usage_update.lock")
+            try:
+                if os.path.exists(lock_path) and (now - os.path.getmtime(lock_path) < 15.0):
+                    return
+                with open(lock_path, "w") as lf:
+                    lf.write(str(now))
+            except Exception:
+                pass
+
+            try:
+                active_usage_proc = subprocess.Popen(
+                    ["jarvos-agent-usage-update"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+            except Exception:
+                active_usage_proc = None
+
     # Initial state
     sessions = get_active_sessions(runtime_dir)
     update_pids(sessions)
+    maybe_update_usage(sessions, force=True)
     sys.stdout.write(json.dumps(sessions) + "\n")
     sys.stdout.flush()
     last_emitted = json.dumps(sessions)
@@ -186,6 +217,9 @@ def main():
                 sys.stdout.write(current_json + "\n")
                 sys.stdout.flush()
                 last_emitted = current_json
+                maybe_update_usage(sessions, force=True)
+            else:
+                maybe_update_usage(sessions, force=False)
 
         except KeyboardInterrupt:
             break

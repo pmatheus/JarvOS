@@ -31,15 +31,16 @@ Item {
     implicitHeight: child.implicitHeight
 
     function refresh(): void {
-        statusProc.running = true;
-        caseProc.running = true;
+        if (!statusProc.running) statusProc.running = true;
+        if (!caseProc.running) caseProc.running = true;
     }
 
     function refreshUsage(): void {
-        updateProc.running = true;
+        if (!updateProc.running) updateProc.running = true;
     }
 
     Component.onCompleted: {
+        refreshUsage();
         refresh();
     }
 
@@ -47,8 +48,19 @@ Item {
         target: root.wrapper
         function onCurrentNameChanged(): void {
             if (root.wrapper.currentName === "agents") {
+                root.refreshUsage();
                 root.refresh();
             }
+        }
+    }
+
+    Timer {
+        id: liveUsageTimer
+        interval: 10000
+        running: root.wrapper.currentName === "agents"
+        repeat: true
+        onTriggered: {
+            root.refreshUsage();
         }
     }
 
