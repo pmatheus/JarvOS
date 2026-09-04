@@ -2,7 +2,6 @@ pragma Singleton
 
 import qs.config
 import qs.utils
-import Caelestia
 import Quickshell
 
 Searcher {
@@ -52,10 +51,10 @@ Searcher {
             weights = [1];
 
             if (!search.startsWith(`${prefix}t `))
-                return query(search).map(e => e.entry);
+                return query(search);
         }
 
-        const results = query(search.slice(prefix.length + 2)).map(e => e.entry);
+        const results = query(search.slice(prefix.length + 2));
         if (search.startsWith(`${prefix}t `))
             return results.filter(a => a.runInTerminal);
         return results;
@@ -71,7 +70,7 @@ Searcher {
     AppDb {
         id: appDb
 
-        path: `${Paths.state}/apps.sqlite`
+        path: `${Paths.state}/apps.json`
         favouriteApps: Config.launcher.favouriteApps
         entries: DesktopEntries.applications.values.filter(a => !Strings.testRegexList(Config.launcher.hiddenApps, a.id))
     }
