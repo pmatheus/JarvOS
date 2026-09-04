@@ -22,8 +22,6 @@ Item {
     readonly property int sessionCount: sessions.length
     readonly property var providers: fullData.providers || {}
 
-    property string activeCase: ""
-
     property string selectedAgent: "claude"
     readonly property var currentProvider: providers[selectedAgent] || null
 
@@ -34,7 +32,6 @@ Item {
 
     function refresh(): void {
         if (!statusProc.running) statusProc.running = true;
-        if (!caseProc.running) caseProc.running = true;
     }
 
     function refreshUsage(): void {
@@ -88,21 +85,6 @@ Item {
     }
 
     Process {
-        id: caseProc
-        command: ["jarvos-case", "active"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                root.activeCase = text.trim();
-            }
-        }
-    }
-
-    Process {
-        id: triageProc
-        command: ["jarvos-hunt-triage"]
-    }
-
-    Process {
         id: updateProc
         command: ["jarvos-agent-usage-update"]
         onExited: (code, status) => {
@@ -130,12 +112,6 @@ Item {
     function launchAgent(agentName: string): void {
         launchProc.command = ["jarvos-agent", agentName];
         launchProc.running = true;
-    }
-
-    function launchAgentInCase(agentName: string): void {
-        launchProc.command = ["bash", "-c", `case_path="$(jarvos-case active --path 2>/dev/null)"; jarvos-agent "${agentName}" --cwd "\${case_path:-$HOME}"`];
-        launchProc.running = true;
-        root.wrapper.close();
     }
 
     function formatPercent(val: real): string {
@@ -229,52 +205,7 @@ Item {
             }
         }
 
-        // 2. Active Threat Hunt Case Context Bar
-        StyledRect {
-            Layout.fillWidth: true
-            radius: Appearance.rounding.small
-            color: Colours.palette.m3surfaceContainer
-            implicitHeight: 34
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 8
-                anchors.rightMargin: 8
-                spacing: 6
-
-                MaterialIcon {
-                    text: "shield"
-                    color: root.activeCase.length > 0 ? Colours.palette.m3primary : Colours.palette.m3outline
-                    font.pointSize: Appearance.font.size.smaller
-                }
-
-                StyledText {
-                    text: root.activeCase.length > 0 ? `Case: ${root.activeCase}` : "No active case"
-                    font.bold: true
-                    font.pointSize: Appearance.font.size.smaller * 0.9
-                    color: Colours.palette.m3onSurface
-                }
-
-                Item { Layout.fillWidth: true }
-
-                TextButton {
-                    text: "Hunt ↗"
-                    type: TextButton.Filled
-                    visible: root.activeCase.length > 0
-                    onClicked: root.launchAgentInCase(root.selectedAgent)
-                }
-
-                TextButton {
-                    text: "Triage"
-                    type: TextButton.Tonal
-                    onClicked: {
-                        triageProc.running = true;
-                    }
-                }
-            }
-        }
-
-        // 3. Running Sessions (Compact, Scrollable if many)
+        // 2. Running Sessions (Compact, Scrollable if many)
         ColumnLayout {
             Layout.fillWidth: true
             spacing: Appearance.spacing.small / 2
