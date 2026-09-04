@@ -30,6 +30,8 @@ Item {
     implicitWidth: contentWidth
     implicitHeight: child.implicitHeight
 
+    property int tickCount: 0
+
     function refresh(): void {
         if (!statusProc.running) statusProc.running = true;
         if (!caseProc.running) caseProc.running = true;
@@ -40,27 +42,31 @@ Item {
     }
 
     Component.onCompleted: {
-        refreshUsage();
         refresh();
+        refreshUsage();
     }
 
     Connections {
         target: root.wrapper
         function onCurrentNameChanged(): void {
             if (root.wrapper.currentName === "agents") {
-                root.refreshUsage();
                 root.refresh();
+                root.refreshUsage();
             }
         }
     }
 
     Timer {
         id: liveUsageTimer
-        interval: 10000
+        interval: 3000
         running: root.wrapper.currentName === "agents"
         repeat: true
         onTriggered: {
-            root.refreshUsage();
+            root.tickCount++;
+            root.refresh();
+            if (root.tickCount % 4 === 0) {
+                root.refreshUsage();
+            }
         }
     }
 
@@ -70,9 +76,12 @@ Item {
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
-                    root.fullData = JSON.parse(text);
+                    const parsed = JSON.parse(text);
+                    if (parsed && typeof parsed === "object") {
+                        root.fullData = parsed;
+                    }
                 } catch (e) {
-                    root.fullData = { "sessions": [], "providers": {} };
+                    // Ignore transient parse error
                 }
             }
         }
@@ -96,7 +105,9 @@ Item {
     Process {
         id: updateProc
         command: ["jarvos-agent-usage-update"]
-        onExited: root.refresh()
+        onExited: (code, status) => {
+            root.refresh();
+        }
     }
 
     Process {
@@ -111,7 +122,9 @@ Item {
 
     Process {
         id: launchProc
-        onExited: root.refresh()
+        onExited: (code, status) => {
+            root.refresh();
+        }
     }
 
     function launchAgent(agentName: string): void {
@@ -126,8 +139,28 @@ Item {
     }
 
     function formatPercent(val: real): string {
-        if (val === undefined || val === null) return "0%";
+        if (val === undefined || val === null || isNaN(val)) return "0%";
         return Math.round(val * 100) + "%";
+    }
+
+    function formatTokens(n: real): string {
+        if (!n || isNaN(n) || n <= 0) return "0";
+        if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
+        if (n >= 1000) return (n / 1000).toFixed(1) + "k";
+        return Math.round(n).toString();
+    }
+
+    function formatLastUpdate(isoStr: string): string {
+        if (!isoStr) return "";
+        try {
+            const diffSec = Math.max(0, Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000));
+            if (diffSec < 10) return "just now";
+            if (diffSec < 60) return `${diffSec}s ago`;
+            const mins = Math.floor(diffSec / 60);
+            return `${mins}m ago`;
+        } catch (e) {
+            return "";
+        }
     }
 
     function formatTimeRemaining(isoStr: string): string {
@@ -244,7 +277,7 @@ Item {
         // 3. Running Sessions (Compact, Scrollable if many)
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: Appearance.spacing.tiny
+            spacing: Appearance.spacing.small / 2
             visible: root.sessionCount > 0
 
             RowLayout {
@@ -274,7 +307,7 @@ Item {
                 ColumnLayout {
                     id: sessionsCol
                     width: parent.width
-                    spacing: Appearance.spacing.tiny
+                    spacing: Appearance.spacing.small / 2
 
                     Repeater {
                         model: root.sessions
@@ -361,7 +394,7 @@ Item {
             RowLayout {
                 anchors.fill: parent
                 anchors.margins: 3
-                spacing: Appearance.spacing.tiny
+                spacing: Appearance.spacing.small / 2
 
                 Repeater {
                     model: [
@@ -425,6 +458,29 @@ Item {
                             font.pointSize: Appearance.font.size.smaller * 0.9
                             color: Colours.palette.m3onSecondaryContainer
                         }
+                    }
+                }
+
+                // Today Live Usage Summary Row
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Appearance.spacing.small
+
+                    StyledText {
+                        text: `Today: ${root.currentProvider?.todayPrompts || 0} prompts · ${root.formatTokens(root.currentProvider?.todayTotalTokens || 0)} tokens`
+                        font.pointSize: Appearance.font.size.smaller * 0.9
+                        font.family: Appearance.font.family.mono
+                        font.bold: true
+                        color: Colours.palette.m3onSurfaceVariant
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    StyledText {
+                        text: root.currentProvider?.updatedAt ? `Updated ${root.formatLastUpdate(root.currentProvider?.updatedAt)}` : ""
+                        font.pointSize: Appearance.font.size.smaller * 0.8
+                        color: Colours.palette.m3outline
+                        visible: text.length > 0
                     }
                 }
 

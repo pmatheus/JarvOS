@@ -184,6 +184,7 @@ def main():
         "schemaVersion": 1,
         "id": AGENT_ID,
         "name": AGENT_NAME,
+        "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
         "ready": True,
         "hasLocalStats": True,
         "tierLabel": "Rate Limited" if is_rate_limited else "Go ($8/mo)",
