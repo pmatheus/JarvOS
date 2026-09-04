@@ -62,12 +62,14 @@ def main():
     recent_by_day = {d: 0 for d in dates}
     today_str = dt.datetime.now().date().strftime("%Y-%m-%d")
     
+    today_tokens = 0
+    today_tokens_by_model: dict[str, int] = {}
     total_prompts = 0
     today_prompts = 0
     total_sessions = 0
     today_sessions = 0
-    active_dates = set()
-    model_usage = {}
+    active_dates: set[str] = set()
+    model_usage: dict[str, dict[str, int]] = {}
 
     if brain_dir.is_dir():
         for conv_dir in brain_dir.iterdir():
@@ -103,7 +105,6 @@ def main():
                                 if date_part == today_str:
                                     today_prompts += 1
                             elif step_type == "PLANNER_RESPONSE":
-                                # model attribution if present
                                 model_name = "gemini-3.8-flash"
                                 if model_name not in model_usage:
                                     model_usage[model_name] = {
@@ -114,6 +115,9 @@ def main():
                                     }
                                 model_usage[model_name]["outputTokens"] += 500
                                 model_usage[model_name]["inputTokens"] += 2000
+                                if date_part == today_str:
+                                    today_tokens += 2500
+                                    today_tokens_by_model[model_name] = today_tokens_by_model.get(model_name, 0) + 2500
                         except Exception:
                             continue
             except Exception:
@@ -143,12 +147,13 @@ def main():
         "schemaVersion": 1,
         "id": AGENT_ID,
         "name": AGENT_NAME,
+        "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
         "ready": True,
         "hasLocalStats": True,
         "todayPrompts": today_prompts,
         "todaySessions": today_sessions,
-        "todayTotalTokens": sum(m["inputTokens"] + m["outputTokens"] for m in model_usage.values()),
-        "todayTokensByModel": {},
+        "todayTotalTokens": today_tokens,
+        "todayTokensByModel": today_tokens_by_model,
         "recentDays": recent_days,
         "totalPrompts": total_prompts,
         "totalSessions": total_sessions,
