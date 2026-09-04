@@ -93,7 +93,7 @@ MouseArea {
     cursorShape: Qt.CrossCursor
 
     Component.onCompleted: {
-        Hypr.extras.refreshOptions();
+        Hypr.refreshOptions();
 
         // Break binding if frozen
         if (loader.freeze)

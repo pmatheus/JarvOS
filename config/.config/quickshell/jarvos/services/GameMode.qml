@@ -12,7 +12,7 @@ Singleton {
     property alias enabled: props.enabled
 
     function setDynamicConfs(): void {
-        Hypr.extras.applyOptions({
+        Hypr.applyOptions({
             "animations:enabled": 0,
             "decoration:shadow:enabled": 0,
             "decoration:blur:enabled": 0,
@@ -30,7 +30,7 @@ Singleton {
             if (Config.utilities.toasts.gameModeChanged)
                 Toaster.toast(qsTr("Game mode enabled"), qsTr("Disabled Hyprland animations, blur, gaps and shadows"), "gamepad");
         } else {
-            Hypr.extras.message("reload");
+            Hypr.message("reload");
             if (Config.utilities.toasts.gameModeChanged)
                 Toaster.toast(qsTr("Game mode disabled"), qsTr("Hyprland settings restored"), "gamepad");
         }
