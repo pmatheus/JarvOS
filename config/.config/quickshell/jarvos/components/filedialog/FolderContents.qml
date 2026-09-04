@@ -6,7 +6,6 @@ import "../images"
 import qs.services
 import qs.config
 import qs.utils
-import Caelestia.Models
 import Quickshell
 import QtQuick
 import QtQuick.Layouts
