@@ -4,7 +4,6 @@ import qs.components
 import qs.components.misc
 import qs.services
 import qs.config
-import Caelestia.Internal
 import QtQuick
 import QtQuick.Layouts
 
@@ -62,7 +61,7 @@ Item {
         }
 
         // Live graph
-        SparklineItem {
+        Sparkline {
             Layout.fillWidth: true
             Layout.topMargin: Appearance.spacing.small / 2
             implicitHeight: 60
