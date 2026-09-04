@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell.Services.UPower
-import Caelestia.Internal
 import qs.components
 import qs.components.misc
 import qs.config
@@ -678,7 +677,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
 
-                SparklineItem {
+                Sparkline {
                     id: sparkline
 
                     property real targetMax: 1024
