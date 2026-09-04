@@ -10,7 +10,6 @@ import qs.components.containers
 import qs.services
 import qs.config
 import qs.utils
-import Caelestia
 import Quickshell
 import Quickshell.Widgets
 import QtQuick
@@ -81,7 +80,7 @@ Item {
     AppDb {
         id: allAppsDb
 
-        path: `${Paths.state}/apps.sqlite`
+        path: `${Paths.state}/apps.json`
         favouriteApps: Config.launcher.favouriteApps
         entries: DesktopEntries.applications.values
     }
@@ -104,7 +103,7 @@ Item {
         const preparedApps = [];
         for (let i = 0; i < allAppsDb.apps.length; i++) {
             const app = allAppsDb.apps[i];
-            const name = app.name || app.entry?.name || "";
+            const name = app.name || "";
             preparedApps.push({
                 _item: app,
                 name: Fuzzy.prepare(name)
