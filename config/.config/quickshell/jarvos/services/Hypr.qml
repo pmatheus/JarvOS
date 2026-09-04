@@ -3,11 +3,12 @@ pragma Singleton
 import qs.components.misc
 import qs.config
 import qs.services
-import Caelestia.Internal
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
 import QtQuick
+
+import "../utils/hypr.js" as HP
 
 Singleton {
     id: root
@@ -24,7 +25,13 @@ Singleton {
     readonly property HyprlandMonitor focusedMonitor: Hyprland.focusedMonitor
     readonly property int activeWsId: focusedWorkspace?.id ?? 1
 
-    readonly property HyprKeyboard keyboard: extras.devices.keyboards.find(kb => kb.main) ?? null
+    // Devices and options, via hyprctl (was caelestia's HyprExtras /
+    // HyprDevices / HyprKeyboard). keyboards entries carry address, name,
+    // layout, activeKeymap, capsLock, numLock and main.
+    property var keyboards: []
+    property var options: ({})
+    readonly property var keyboard: keyboards.find(kb => kb.main) ?? null
+
     readonly property bool capsLock: keyboard?.capsLock ?? false
     readonly property bool numLock: keyboard?.numLock ?? false
     readonly property string defaultKbLayout: keyboard?.layout.split(",")[0] ?? "??"
@@ -32,12 +39,10 @@ Singleton {
     readonly property string kbLayout: kbMap.get(kbLayoutFull) ?? "??"
     readonly property var kbMap: new Map()
 
-    readonly property alias extras: extras
-    readonly property alias options: extras.options
-    readonly property alias devices: extras.devices
-
     property bool hadKeyboard
     property string lastSpecialWorkspace: ""
+    property var _cmdQueue: []
+    property bool _refreshAfterCmd: false
 
     signal configReloaded
 
@@ -87,10 +92,60 @@ Singleton {
     }
 
     function reloadDynamicConfs(): void {
-        extras.batchMessage(["keyword bindlni ,Caps_Lock,global,caelestia:refreshDevices", "keyword bindlni ,Num_Lock,global,caelestia:refreshDevices"]);
+        batchMessage(["keyword bindlni ,Caps_Lock,global,caelestia:refreshDevices", "keyword bindlni ,Num_Lock,global,caelestia:refreshDevices"]);
     }
 
-    Component.onCompleted: reloadDynamicConfs()
+    function refreshDevices(): void {
+        devicesProc.running = true;
+    }
+
+    function refreshOptions(): void {
+        optionsProc.running = true;
+    }
+
+    function applyOptions(options): void {
+        const commands = HP.optionCommands(options);
+        if (commands.length === 0)
+            return;
+        enqueue(["hyprctl", "--batch", HP.batchRequest(commands)], true);
+    }
+
+    function message(cmd): void {
+        if (!cmd)
+            return;
+        enqueue(["hyprctl", cmd], false);
+    }
+
+    function batchMessage(commands): void {
+        const request = HP.batchRequest(commands);
+        if (!request)
+            return;
+        enqueue(["hyprctl", "--batch", request], false);
+    }
+
+    function enqueue(args, refreshAfter): void {
+        _cmdQueue.push({
+            args: args,
+            refreshAfter: refreshAfter
+        });
+        if (!cmdProc.running)
+            runNextCmd();
+    }
+
+    function runNextCmd(): void {
+        const next = _cmdQueue.shift();
+        if (!next)
+            return;
+        _refreshAfterCmd = next.refreshAfter;
+        cmdProc.command = next.args;
+        cmdProc.running = true;
+    }
+
+    Component.onCompleted: {
+        reloadDynamicConfs();
+        refreshDevices();
+        refreshOptions();
+    }
 
     onCapsLockChanged: {
         if (!Config.utilities.toasts.capsLockChanged)
@@ -130,6 +185,9 @@ Singleton {
             if (n === "configreloaded") {
                 root.configReloaded();
                 root.reloadDynamicConfs();
+                root.refreshOptions();
+            } else if (n === "activelayout") {
+                root.refreshDevices();
             } else if (["workspace", "moveworkspace", "activespecial", "focusedmon"].includes(n)) {
                 Hyprland.refreshWorkspaces();
                 Hyprland.refreshMonitors();
@@ -195,7 +253,7 @@ Singleton {
         target: "hypr"
 
         function refreshDevices(): void {
-            extras.refreshDevices();
+            root.refreshDevices();
         }
 
         function cycleSpecialWorkspace(direction: string): void {
@@ -210,11 +268,33 @@ Singleton {
     CustomShortcut {
         name: "refreshDevices"
         description: "Reload devices"
-        onPressed: extras.refreshDevices()
-        onReleased: extras.refreshDevices()
+        onPressed: root.refreshDevices()
+        onReleased: root.refreshDevices()
     }
 
-    HyprExtras {
-        id: extras
+    property Process devicesProc: Process {
+        command: ["hyprctl", "-j", "devices"]
+
+        stdout: StdioCollector {
+            onStreamFinished: root.keyboards = HP.parseDevices(text)
+        }
+    }
+
+    property Process optionsProc: Process {
+        command: ["hyprctl", "descriptions", "-j"]
+
+        stdout: StdioCollector {
+            onStreamFinished: root.options = HP.parseOptions(text)
+        }
+    }
+
+    property Process cmdProc: Process {
+        stdout: StdioCollector {
+            onStreamFinished: {
+                if (root._refreshAfterCmd)
+                    root.refreshOptions();
+                root.runNextCmd();
+            }
+        }
     }
 }
