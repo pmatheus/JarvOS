@@ -4,8 +4,8 @@ import qs.components
 import qs.components.controls
 import qs.services
 import qs.utils
+import qs.components.misc
 import qs.config
-import Caelestia.Services
 import Quickshell
 import Quickshell.Services.Mpris
 import QtQuick
@@ -93,10 +93,6 @@ Item {
 
     ServiceRef {
         service: Audio.cava
-    }
-
-    ServiceRef {
-        service: Audio.beatTracker
     }
 
     Shape {
@@ -397,7 +393,7 @@ Item {
                 height: visualiser.height * 0.75
 
                 playing: Players.active?.isPlaying ?? false
-                speed: Audio.beatTracker.bpm / Appearance.anim.mediaGifSpeedAdjustment // qmllint disable unresolved-type
+                speed: 1
                 source: Paths.absolutePath(Config.paths.mediaGif)
                 asynchronous: true
                 fillMode: AnimatedImage.PreserveAspectFit
