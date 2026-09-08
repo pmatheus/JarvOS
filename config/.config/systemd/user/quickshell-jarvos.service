@@ -7,8 +7,9 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/qs -c caelestia
-Restart=no
+ExecStart=%h/.local/bin/jarvos-shell start
+Restart=on-failure
+RestartSec=2
 
 [Install]
 WantedBy=graphical-session.target

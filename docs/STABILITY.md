@@ -1,5 +1,10 @@
 # Shell stability invariants
 
+Since 2026-09-08 the active desktop uses the Omarchy shell with JarvOS
+extensions. Use [current operation and rollback](omarchy-shell.md) for that
+session. The implementation paths and switchover commands below describe the
+retired shell and remain as historical context.
+
 The JarvOS shell crashed under threaded rendering when a vendored Caelestia
 `Shape{}` raced its own `ShapePath` worker, and the same QuickShell process
 held the WlSessionLock — so a GPU stall in the bar took the authentication

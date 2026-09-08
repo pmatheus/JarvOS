@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+# JarvOS session integration for the pinned Omarchy desktop.
+set -euo pipefail
+
+usage() {
+    cat <<'HELP'
+Usage: jarvos-shell <command> [arguments]
+  start                     Start the desktop shell
+  status                    Check shell IPC
+  menu [route]              Toggle the command menu
+  apps                      Toggle the application launcher
+  audio|network|bluetooth|display|power
+                            Toggle a desktop panel
+  notifications|clear       Show history or clear notifications
+  clipboard|emoji           Open clipboard history or emoji picker
+  theme [name]              Select a desktop theme
+  wallpaper [file]          Select a desktop wallpaper
+  record [options]          Start/stop Omarchy screen recording
+  agents                    Open the JarvOS agent picker
+  lock                      Use the JarvOS Hyprlock screen
+  restart                   Restart the desktop service
+  ipc <target> <method> ...  Call Omarchy IPC without changing arguments
+HELP
+}
+
+action=${1:---help}
+shift || true
+case "$action" in
+    -h|--help|help) usage; exit 0 ;;
+    lock) exec "$HOME/.config/hypr/hyprlock/lock.sh" "$@" ;;
+    agents) exec jarvos-agent-pick "$@" ;;
+    restart) exec systemctl --user restart quickshell-jarvos.service ;;
+esac
+
+export OMARCHY_PATH=${JARVOS_OMARCHY_PATH:-$HOME/.local/share/omarchy}
+if [[ ! -f "$OMARCHY_PATH/shell/shell.qml" ]]; then
+    echo "Omarchy is not installed at $OMARCHY_PATH. Run jarvos-shell-install." >&2
+    exit 1
+fi
+base=$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)
+assets="$base/share/jarvos/omarchy"
+[[ -d "$assets" ]] || assets=/usr/share/jarvos/omarchy
+export PATH="$assets/compat:$base/bin:$HOME/.local/bin:$OMARCHY_PATH/bin:$PATH"
+ipc() {
+    local output
+    output=$("$OMARCHY_PATH/bin/omarchy-shell" "$@") || return $?
+    if [[ "$output" == unknown ]]; then
+        echo 'Omarchy IPC: unknown or inactive plugin.' >&2
+        return 1
+    fi
+    [[ -z "$output" ]] || printf '%s\n' "$output"
+}
+
+case "$action" in
+    start)
+        export QS_NO_RELOAD_POPUP=1 QS_DISABLE_FILE_WATCHER=1
+        exec qs -n -p "$OMARCHY_PATH/shell"
+        ;;
+    status) ipc shell ping ;;
+    ipc) ipc "$@" ;;
+    menu) omarchy-menu toggle "${1:-root}" ;;
+    apps) omarchy-menu toggle apps ;;
+    audio|network|bluetooth|power)
+        ipc shell toggle "omarchy.$action" '{}'
+        ;;
+    display) ipc shell toggle omarchy.monitor '{}' ;;
+    notifications) ipc notifications showHistory ;;
+    clear) ipc notifications clear; ipc notifications dismissAll ;;
+    clipboard) ipc shell toggle omarchy.clipboard '{}' ;;
+    emoji) ipc shell toggle omarchy.emojis '{}' ;;
+    record) exec omarchy-capture-screenrecording "$@" ;;
+    theme)
+        if [[ $# == 0 ]]; then
+            selected=$(omarchy-theme-switcher) || exit 1
+            [[ -n "$selected" ]] || exit 0
+            set -- "$selected"
+        fi
+        theme=$(printf '%s' "$1" | tr '[:upper:] ' '[:lower:]-')
+        if [[ ! "$theme" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+            echo 'Invalid theme name.' >&2
+            exit 2
+        fi
+        # Generate the theme data only. Full Omarchy hooks reconfigure editors,
+        # agent settings and the compositor of a complete Omarchy installation.
+        OMARCHY_THEME_HEADLESS=1 OMARCHY_THEME_SKIP_BACKGROUND=1 \
+            "$OMARCHY_PATH/bin/omarchy-theme-set" "$theme"
+        current="$HOME/.local/state/omarchy/current/theme"
+        ipc shell applyTheme "$(base64 -w0 "$current/colors.toml")" \
+            "$(base64 -w0 "$current/shell.toml")"
+        ;;
+    wallpaper)
+        if [[ $# == 0 ]]; then
+            dirs=()
+            current=$(readlink -f "$HOME/.local/state/omarchy/current/background" || true)
+            for dir in "$HOME/Pictures/Wallpapers" "$base/wallpapers" "${current%/*}"; do
+                [[ -d "$dir" ]] && dirs+=("$dir")
+            done
+            [[ ${#dirs[@]} -gt 0 ]] || { echo 'No wallpaper directories found.' >&2; exit 1; }
+            selected=$(omarchy-menu-images --filterable "${dirs[@]}") || exit 1
+            [[ -n "$selected" ]] || exit 0
+        else
+            selected=$1
+        fi
+        selected=$(realpath -- "$selected")
+        [[ -f "$selected" ]] || { echo "Wallpaper not found: $selected" >&2; exit 1; }
+        if [[ $(file -b --mime-type -- "$selected") != image/* ]]; then
+            echo 'Choose an image wallpaper. Videos cannot be used by Hyprlock.' >&2
+            notify-send -a JarvOS 'Wallpaper' 'Escolha uma imagem. O Hyprlock não usa vídeos.' || true
+            exit 2
+        fi
+        mkdir -p "$HOME/.local/state/omarchy/current" "$HOME/.cache"
+        ln -sfn -- "$selected" "$HOME/.local/state/omarchy/current/background"
+        ln -sfn -- "$selected" "$HOME/.cache/hyprlock-wallpaper"
+        ipc background set "$selected"
+        ;;
+    *) usage >&2; exit 2 ;;
+esac

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "jarvos.identity",
+  "name": "JarvOS",
+  "version": "1.0.0",
+  "author": "JarvOS",
+  "description": "JarvOS brand and desktop menu",
+  "kinds": ["bar-widget"],
+  "entryPoints": {"barWidget": "Widget.qml"},
+  "barWidget": {"displayName": "JarvOS", "defaultSection": "left", "allowMultiple": false}
+}

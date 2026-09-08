@@ -5,8 +5,6 @@ app2unit
 bibata-cursor-theme-bin
 binaryninja-free
 brave-bin
-caelestia-cli
-caelestia-shell
 claude-code
 claude-desktop
 cupp-git

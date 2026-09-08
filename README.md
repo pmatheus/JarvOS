@@ -12,14 +12,14 @@
                  ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝   ╚═════╝ ╚══════╝
 
           ┌─────────────────────────────────────────────────────────────┐
-          │  Hyprland  +  QuickShell  +  Material Design 3  +  Arch   │
+          │  Hyprland  +  Omarchy Shell  +  JarvOS  +  Arch        │
           └─────────────────────────────────────────────────────────────┘
 ```
 
 <p align="center">
   <em>The AI-native operating system.<br/>
   A modern Arch Linux desktop where AI agents see, interact with, and control<br/>
-  every application — built on Hyprland, QuickShell, and Material Design 3.</em>
+  every application, built on Hyprland and the Omarchy QuickShell desktop.</em>
 </p>
 
 <p align="center">
@@ -41,7 +41,7 @@
 
 ---
 
-> Merges the best of [END-4/dots-hyprland](https://github.com/end-4/dots-hyprland) and [Caelestia](https://github.com/caelestia-dots/caelestia) into a unified, opinionated desktop experience — then adds an AI control layer that lets LLM agents operate it autonomously.
+> Uses the [Omarchy shell](https://github.com/omacom/omarchy/tree/quattro/shell) with JarvOS branding, agent tools, existing Hyprland configuration and the Chinese stratagem Hyprlock screen. Caelestia is no longer a runtime dependency. See [desktop operation and rollback](docs/omarchy-shell.md).
 
 ## AI-Native
 
@@ -121,7 +121,7 @@ containing secret-shaped strings. Per-host files (`monitors.conf`, matugen
 ## Features
 
 ### Visual Design
-- **Material Design 3** color system with dynamic wallpaper-based theming
+- **JarvOS palette** with Omarchy desktop theme and wallpaper selection
 - **Glassmorphism** blur on sidebar and overlays
 - **Fluid animations** — 9 custom bezier curves for windows, workspaces, layers
 - **Dynamic gap sizing** — single-window workspaces breathe with larger gaps
@@ -129,23 +129,24 @@ containing secret-shaped strings. Per-host files (`monitors.conf`, matugen
 - **85% inactive window opacity** with blur-through
 - **6 GPU shaders** — CRT, chromatic aberration, solarized, invert, and more
 
-### Shell Components (16 QuickShell Modules)
+### Active shell components
 | Module | Description |
 |--------|-------------|
 | **Bar** | Per-monitor taskbar with workspaces, clock, media, battery, sys tray |
-| **Sidebar Right** | Calendar, notifications, quick toggles, volume mixer, todo |
-| **Overview** | Spotlight-style app launcher with search, emoji, clipboard history |
-| **Notifications** | Material Design popup notifications with actions |
+| **Panels** | Audio mixer, network, Bluetooth, monitors and power |
+| **Launcher** | Search applications and JarvOS commands |
+| **Notifications** | Omarchy popup notifications, history and actions |
 | **OSD** | On-screen volume and brightness indicators |
 | **Media Controls** | MPRIS player control overlay |
-| **Resource Monitor** | CPU, RAM, disk, network stats |
 | **Weather** | Current weather widget |
 | **Clock/Calendar** | Full-featured calendar and clock monitors |
-| **Cheatsheet** | Keybinding reference (Super+H) |
+| **Keybindings** | Active bindings in the terminal (Super+H) |
 | **Session** | Power menu with lock, logout, suspend, shutdown |
-| **Screen Corners** | Hot corner detection |
-| **On-Screen Keyboard** | Virtual keyboard for touch input |
-| **Background Widgets** | Desktop background elements |
+| **Clipboard / emoji** | Separate searchable native pickers |
+| **JarvOS extensions** | Identity, agent picker and optional module setup |
+
+The previous QML shell remains in the repository as reference code. Its todo
+sidebar, touch keyboard and background widgets are not active in this session.
 
 ### Window Management
 - **Window groups** with gradient tab indicators (`Super+,`)
@@ -167,8 +168,8 @@ containing secret-shaped strings. Per-host files (`monitors.conf`, matugen
 ### Essential
 | Shortcut | Action |
 |----------|--------|
-| `Super` | Overview / App launcher |
-| `Super+Space` | Spotlight search |
+| `Super` | JarvOS command menu |
+| `Super+Space` | Application launcher |
 | `Super+Return` | Terminal |
 | `Super+E` | File manager |
 | `Super+W` | Browser |
@@ -177,10 +178,11 @@ containing secret-shaped strings. Per-host files (`monitors.conf`, matugen
 ### Shell Panels
 | Shortcut | Action |
 |----------|--------|
-| `Super+N` | Toggle sidebar |
-| `Super+H` | Toggle cheatsheet |
-| `Super+K` | Toggle on-screen keyboard |
-| `Super+I` | Settings |
+| `Super+N` | Show notification history |
+| `Super+H` | Read active keybindings |
+| `Super+K` | JarvOS command menu |
+| `Super+I` | Desktop settings menu |
+| `Super+Shift+U` | JarvOS tools |
 | `Ctrl+Alt+Delete` | Session menu |
 
 ### Window Management
@@ -225,17 +227,17 @@ containing secret-shaped strings. Per-host files (`monitors.conf`, matugen
 
 ## Shell stability
 
-The QuickShell shell hosts the bar, drawers, dashboard, and notifications
-— nothing else. It runs under systemd (`quickshell-jarvos.service`) with
+The Omarchy QuickShell process hosts the bar, panels, background and notifications.
+It runs under systemd (`quickshell-jarvos.service`) with
 auto-restart so a crash recovers in seconds without dropping the Hyprland
-session. The lock surface is **hyprlock**, not QuickShell — native C++,
-no QML, no upstream Caelestia coupling, can't be killed by a Qt regression
-or a mid-session `pacman -Syu`. A pre-commit lint refuses any QML that
+session. Hyprlock runs separately and remains locked across shell restarts.
+A pre-commit lint refuses any QML that
 puts `asynchronous: true` on a `Shape{}` (Qt's threaded shape renderer
 races `ShapePath` and segfaults).
 
-Full contract, including the four hard rules and the switchover steps, is
-in [`docs/STABILITY.md`](docs/STABILITY.md).
+Current operation and rollback are documented in
+[`docs/omarchy-shell.md`](docs/omarchy-shell.md). The earlier shell's stability
+history is in [`docs/STABILITY.md`](docs/STABILITY.md).
 
 ## Architecture
 
@@ -259,10 +261,9 @@ JarvOS/
 │       │   ├── hyprlock.conf      # Lock screen config
 │       │   ├── hypridle.conf      # Idle management
 │       │   └── shaders/           # GPU shader effects
-│       └── quickshell/
-│           ├── shell.qml          # Shell entry — enable/disable modules
-│           ├── modules/           # 16 UI modules (92 reusable widgets)
-│           └── services/          # 25 backend services
+│       ├── omarchy/               # Active layout, JarvOS plugins and theme
+│       └── quickshell/            # Retired shell and retained helper scripts
+├── share/jarvos/omarchy/          # Upstream revision and compatibility commands
 ├── hypr-box/                      # AI control layer (submodule)
 │   ├── hypr_box/
 │   │   ├── backends/              # hyprctl, wtype, grim, wpctl wrappers
@@ -306,6 +307,7 @@ one.
 
 ## Credits
 
+- [omacom/omarchy](https://github.com/omacom/omarchy) — Active desktop shell, panels, menus and theme engine
 - [chsoares/hypr-arch](https://github.com/chsoares/hypr-arch) — Original dotfiles foundation, installer, SDDM/GRUB theming, and desktop integration
 - [END-4/dots-hyprland](https://github.com/end-4/dots-hyprland) — QuickShell desktop shell, Material Design 3 widget system
 - [Caelestia](https://github.com/caelestia-dots/caelestia) — Animation physics, gestures, window groups, dynamic gaps
@@ -317,6 +319,6 @@ one.
 JarvOS is licensed under the GNU General Public License v3.0 only — see
 [LICENSE](LICENSE).
 
-The JarvOS shell (`config/.config/quickshell/jarvos/`) derives from
+The retired JarvOS shell (`config/.config/quickshell/jarvos/`) derives from
 [Caelestia](https://github.com/caelestia-dots/caelestia), which is
 GPL-3.0-only. That copyleft is why the whole repository is GPL-3.0-only.

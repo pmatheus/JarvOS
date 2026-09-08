@@ -63,14 +63,8 @@ xdg-utils
 polkit-gnome
 gnome-keyring
 
-# === JARVOS SHELL (quickshell / Caelestia) ===
-# caelestia-shell provides the Caelestia.* QML plugins the JarvOS shell imports,
-# and hard-depends on quickshell-git, caelestia-cli, app2unit, libcava, fish,
-# ddcutil, brightnessctl, lm_sensors, swappy, libqalculate and
-# power-profiles-daemon. They are listed explicitly anyway so an orphan sweep
-# never removes them.
-caelestia-shell
-caelestia-cli
+# === JARVOS SHELL (pinned Omarchy / Quickshell) ===
+# jarvos-shell-install prepares the upstream checkout and local extensions.
 quickshell-git
 app2unit
 libcava
