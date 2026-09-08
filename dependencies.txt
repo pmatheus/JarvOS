@@ -6,6 +6,7 @@
 axel
 bc
 coreutils
+file
 cliphist
 cmake
 curl
@@ -91,6 +92,7 @@ swappy
 tesseract
 tesseract-data-eng
 wf-recorder
+gpu-screen-recorder
 wlogout
 grimblast-git
 satty
@@ -103,6 +105,8 @@ xdg-desktop-portal-gtk
 gnome-keyring
 polkit-gnome
 networkmanager
+power-profiles-daemon
+libnotify
 nm-connection-editor
 bluetooth-utils
 openrgb
