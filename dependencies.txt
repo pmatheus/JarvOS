@@ -163,3 +163,11 @@ nuspell
 
 # === BUILD ===
 base-devel
+
+# === NATIVE JARVOS DESKTOP ===
+file
+python
+python-materialyoucolor
+python-pillow
+gpu-screen-recorder
+awww

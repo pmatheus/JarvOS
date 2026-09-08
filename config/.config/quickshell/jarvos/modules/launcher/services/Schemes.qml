@@ -40,7 +40,7 @@ Searcher {
         id: getSchemes
 
         running: true
-        command: ["caelestia", "scheme", "list"]
+        command: ["jarvos-desktop", "scheme", "list"]
         stdout: StdioCollector {
             onStreamFinished: {
                 const schemeData = JSON.parse(text);
@@ -64,7 +64,7 @@ Searcher {
         id: getCurrent
 
         running: true
-        command: ["caelestia", "scheme", "get", "-nfv"]
+        command: ["jarvos-desktop", "scheme", "get", "-nfv"]
         stdout: StdioCollector {
             onStreamFinished: {
                 const [name, flavour, variant] = text.trim().split("\n");
@@ -82,7 +82,7 @@ Searcher {
 
         function onClicked(list: AppList): void {
             list.visibilities.launcher = false;
-            Quickshell.execDetached(["caelestia", "scheme", "set", "-n", name, "-f", flavour]);
+            Quickshell.execDetached(["jarvos-desktop", "scheme", "set", "-n", name, "-f", flavour]);
         }
     }
 }

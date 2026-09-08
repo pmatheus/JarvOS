@@ -18,6 +18,9 @@ done
 printf '\n== tests/qml/run.sh\n'
 tests/qml/run.sh || fail=1
 
+printf '\n== tests/desktop\n'
+uv run --with pytest -m pytest tests/desktop -q || fail=1
+
 # The two jarvos-sync suites predate this gate and carry findings of their own;
 # every other suite is in scope, including ones added later.
 lint=(bin/jarvos-* lib/*.sh tests/run-all.sh tests/lib/*.sh tests/qml/run.sh

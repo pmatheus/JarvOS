@@ -155,7 +155,7 @@
         "icon": "settings",
         "description": "Configure the shell",
         "command": [
-          "caelestia",
+          "jarvos-desktop",
           "shell",
           "controlCenter",
           "open"

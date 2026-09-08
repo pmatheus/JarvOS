@@ -156,10 +156,6 @@ StyledListView {
                     easing.bezierCurve: Appearance.anim.curves.standardAccel
                 }
             }
-            PropertyAction {
-                targets: [model, root]
-                properties: "values,delegate"
-            }
             ParallelAnimation {
                 Anim {
                     target: root

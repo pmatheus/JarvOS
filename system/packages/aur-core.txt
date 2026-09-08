@@ -2,8 +2,6 @@
 # Installed by bootstrap.sh by default. One package per line, '#' comments ignored.
 
 # Shell / compositor stack
-caelestia-shell
-caelestia-cli
 quickshell-git
 grimblast-git
 wlogout

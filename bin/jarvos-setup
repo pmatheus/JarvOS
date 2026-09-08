@@ -9,7 +9,7 @@
 
 set -uo pipefail
 
-CONFIG=${JARVOS_SHELL_CONFIG:-caelestia}
+CONFIG=${JARVOS_SHELL_CONFIG:-jarvos}
 PENDING=${JARVOS_FIRST_RUN_MARKER:-/var/lib/jarvos/first-run-pending}
 DONE="${XDG_STATE_HOME:-$HOME/.local/state}/jarvos/first-run-done"
 

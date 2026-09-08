@@ -171,10 +171,14 @@ Singleton {
         property var _refs: []
         property bool _running: false
 
-        onBarsChanged: root.writeCavaConf()
+        onBarsChanged: {
+            cavaProc.running = false;
+            root.writeCavaConf();
+        }
 
         function startProc(): void {
-            cavaProc.running = true;
+            if (!cavaProc.running)
+                root.writeCavaConf();
         }
 
         function ref(sender): void {
@@ -204,9 +208,14 @@ Singleton {
 
     property FileView cavaConf: FileView {
         path: `${Paths.state}/cava.conf`
+        onSaved: {
+            if (root.cavaImpl._refs.length > 0)
+                cavaProc.running = true;
+        }
     }
 
     property Process cavaProc: Process {
+        command: ["cava", "-p", `${Paths.state}/cava.conf`]
         stdout: SplitParser {
             onRead: data => {
                 const frame = CavaParser.parseFrame(data, 100, root.cavaImpl.bars);

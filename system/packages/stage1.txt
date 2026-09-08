@@ -63,14 +63,8 @@ xdg-utils
 polkit-gnome
 gnome-keyring
 
-# === JARVOS SHELL (quickshell / Caelestia) ===
-# caelestia-shell provides the Caelestia.* QML plugins the JarvOS shell imports,
-# and hard-depends on quickshell-git, caelestia-cli, app2unit, libcava, fish,
-# ddcutil, brightnessctl, lm_sensors, swappy, libqalculate and
-# power-profiles-daemon. They are listed explicitly anyway so an orphan sweep
-# never removes them.
-caelestia-shell
-caelestia-cli
+# === JARVOS SHELL ===
+# Native QML services and jarvos-desktop own the shell runtime.
 quickshell-git
 app2unit
 libcava
@@ -91,7 +85,7 @@ gsettings-desktop-schemas
 
 # === FONTS ===
 # Only the families the shell and hyprlock actually name. Rubik is the shell
-# sans and clock and a hard dependency of caelestia-shell; Gabarito and
+# sans and clock; Gabarito and
 # JetBrainsMono Nerd are hyprlock's; CaskaydiaCove Nerd is the shell mono;
 # Material Symbols Rounded is every icon in the UI. ttf-rubik-vf rather than
 # ttf-google-fonts-typewolf: the same font, without the other 39 families and
@@ -173,3 +167,7 @@ btop
 # === APPS THE SHELL LAUNCHES BY DEFAULT ===
 nautilus
 mpv
+
+# Native desktop CLI runtime
+python
+file

@@ -239,6 +239,10 @@ install_dotfiles() {
 
     cp -rf config/.config/* "$XDG_CONFIG_HOME/"
 
+    mkdir -p "$HOME/.local/bin"
+    ln -sfn "$base/bin/jarvos-shell" "$HOME/.local/bin/jarvos-shell"
+    ln -sfn "$base/bin/jarvos-desktop" "$HOME/.local/bin/jarvos-desktop"
+
     # A fresh install is already at the state every shipped migration
     # produces; mark them so first boot migrates nothing.
     step "Marking shipped migrations as applied..."

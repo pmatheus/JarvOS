@@ -3,80 +3,63 @@ pragma Singleton
 import Quickshell
 import Quickshell.Io
 import QtQuick
+import qs.utils
 
 Singleton {
     id: root
 
-    readonly property alias running: props.running
-    readonly property alias paused: props.paused
-    readonly property alias elapsed: props.elapsed
-    property bool needsStart
-    property list<string> startArgs
-    property bool needsStop
-    property bool needsPause
+    property bool running: false
+    property bool paused: false
+    property real elapsed: 0
+    property list<string> requestArgs: ["--status"]
 
-    function start(extraArgs = []): void {
-        needsStart = true;
-        startArgs = extraArgs;
-        checkProc.running = true;
+    function request(args: list<string>): void {
+        if (control.running)
+            return;
+        requestArgs = args;
+        control.running = true;
     }
 
-    function stop(): void {
-        needsStop = true;
-        checkProc.running = true;
-    }
+    function start(extraArgs = []): void { request(extraArgs); }
+    function stop(): void { request(["--stop"]); }
+    function togglePause(): void { request(["--pause"]); }
 
-    function togglePause(): void {
-        needsPause = true;
-        checkProc.running = true;
-    }
-
-    PersistentProperties {
-        id: props
-
-        property bool running: false
-        property bool paused: false
-        property real elapsed: 0 // Might get too large for int
-
-        reloadableId: "recorder"
+    FileView {
+        path: `${Paths.state}/recorder.json`
+        watchChanges: true
+        onFileChanged: root.request(["--status"])
     }
 
     Process {
-        id: checkProc
-
+        id: control
+        command: ["jarvos-desktop", "record", ...root.requestArgs]
         running: true
-        command: ["pidof", "gpu-screen-recorder"]
-        onExited: code => {
-            props.running = code === 0;
-
-            if (code === 0) {
-                if (root.needsStop) {
-                    Quickshell.execDetached(["caelestia", "record"]);
-                    props.running = false;
-                    props.paused = false;
-                } else if (root.needsPause) {
-                    Quickshell.execDetached(["caelestia", "record", "-p"]);
-                    props.paused = !props.paused;
+        stdout: StdioCollector {
+            onStreamFinished: {
+                if (!text.trim())
+                    return;
+                try {
+                    const state = JSON.parse(text);
+                    root.running = state.running;
+                    root.paused = state.paused;
+                    root.elapsed = state.elapsed;
+                } catch (error) {
+                    console.warn("Invalid recorder status: " + error);
                 }
-            } else if (root.needsStart) {
-                Quickshell.execDetached(["caelestia", "record", ...root.startArgs]);
-                props.running = true;
-                props.paused = false;
-                props.elapsed = 0;
             }
-
-            root.needsStart = false;
-            root.needsStop = false;
-            root.needsPause = false;
+        }
+        stderr: StdioCollector {
+            onStreamFinished: {
+                if (text.trim())
+                    Toaster.toast(qsTr("Recording"), text.trim(), "error");
+            }
         }
     }
 
-    Connections {
-        target: Time
-        // enabled: props.running && !props.paused
-
-        function onSecondsChanged(): void {
-            props.elapsed++;
-        }
+    Timer {
+        interval: 1000
+        running: root.running
+        repeat: true
+        onTriggered: root.request(["--status"])
     }
 }

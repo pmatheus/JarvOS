@@ -43,6 +43,10 @@
 
 > Merges the best of [END-4/dots-hyprland](https://github.com/end-4/dots-hyprland) and [Caelestia](https://github.com/caelestia-dots/caelestia) into a unified, opinionated desktop experience — then adds an AI control layer that lets LLM agents operate it autonomously.
 
+The original JarvOS QML shell runs with native services and `jarvos-desktop`.
+Caelestia packages and Omarchy are not runtime dependencies. See
+[native shell operations](docs/native-shell.md) for startup, themes and recording.
+
 ## AI-Native
 
 JarvOS is the first desktop environment designed for AI agents to control. Through **[hypr-box](https://github.com/pmatheus/hypr-box)**, any LLM agent can:
