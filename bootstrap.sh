@@ -147,7 +147,6 @@ deploy_dotfiles(){
     step "deploying dotfiles into $cfg…"
     run mkdir -p "$cfg"
     run cp -rf "$base/config/.config/." "$cfg/"
-    run "$base/bin/jarvos-shell-install" --prepare
 
     # The secret gate ships on, not opt-in: it is off exactly when a new
     # clone needs it most.
@@ -353,5 +352,5 @@ done
 echo
 ok "JarvOS bootstrap complete."
 echo -e "${YELLOW}Next: log out and pick the Hyprland session in SDDM, or run:${NC}"
-echo "  systemctl --user start quickshell-jarvos.service   # or: jarvos-shell start"
+echo "  systemctl --user start quickshell-jarvos.service   # or: qs -c caelestia"
 echo -e "${YELLOW}Edit ~/.config/hypr/hyprland/monitors.conf for your display layout.${NC}"

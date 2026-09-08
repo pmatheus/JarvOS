@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-echo 'The Omarchy shell revision is pinned by JarvOS. Use jarvos-update for system maintenance.' >&2
-exit 1

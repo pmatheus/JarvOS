@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-[[ ${1:-} != -- ]] || shift
-if [[ $# == 0 ]]; then exec kitty; fi
-exec kitty -e "$@"

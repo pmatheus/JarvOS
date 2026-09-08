@@ -238,7 +238,6 @@ install_dotfiles() {
     mkdir -p "$XDG_CONFIG_HOME"
 
     cp -rf config/.config/* "$XDG_CONFIG_HOME/"
-    ./bin/jarvos-shell-install --prepare
 
     # A fresh install is already at the state every shipped migration
     # produces; mark them so first boot migrates nothing.

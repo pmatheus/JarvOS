@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-# Launch within the existing JarvOS session, which is not managed by uwsm.
-set -euo pipefail
-[[ ${1:-} != -- ]] || shift
-exec "$@"

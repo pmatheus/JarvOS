@@ -28,6 +28,8 @@ brave-bin
 brightnessctl
 btrfs-assistant
 btrfs-progs
+caelestia-cli
+caelestia-shell
 cava
 chafa
 chntpw
@@ -106,7 +108,6 @@ go
 gobject-introspection
 gobuster
 google-chrome
-gpu-screen-recorder
 graphviz
 grilo-plugins
 grimblast-git
