@@ -2,10 +2,13 @@ pragma Singleton
 
 import qs.config
 import qs.services
-import Caelestia.Services
+import qs.utils
 import Quickshell
+import Quickshell.Io
 import Quickshell.Services.Pipewire
 import QtQuick
+
+import "../utils/cava.js" as CavaParser
 
 Singleton {
     id: root
@@ -26,8 +29,12 @@ Singleton {
     readonly property bool sourceMuted: !!source?.audio?.muted
     readonly property real sourceVolume: source?.audio?.volume ?? 0
 
-    readonly property alias cava: cava
-    readonly property alias beatTracker: beatTracker
+    // The visualiser feed, ported from caelestia's C++ CavaProvider: the
+    // cava CLI runs with a raw-ascii output config and frames are parsed in
+    // utils/cava.js. Refs keep it running only while consumers are mounted
+    // (the ServiceRef contract from the C++ port). BPM tracking was dropped
+    // in this port — see docs/decisions/2026-09-04.
+    readonly property alias cava: cavaImpl
 
     function setVolume(newVolume: real): void {
         if (sink?.ready && sink?.audio) {
@@ -120,6 +127,9 @@ Singleton {
     }
 
     Component.onCompleted: {
+        // Write the cava conf before any watcher can mount: setText is
+        // async, and spawning cava against an unflushed conf exits silently.
+        root.writeCavaConf();
         previousSinkName = sink?.description || sink?.name || qsTr("Unknown Device");
         previousSourceName = source?.description || source?.name || qsTr("Unknown Device");
     }
@@ -153,13 +163,85 @@ Singleton {
         objects: [...root.sinks, ...root.sources, ...root.streams]
     }
 
-    CavaProvider {
-        id: cava
+    property QtObject cavaImpl: QtObject {
+        id: cavaImpl
 
-        bars: Config.services.visualiserBars
+        property int bars: Config.services.visualiserBars
+        property var values: []
+        property var _refs: []
+        property bool _running: false
+
+        onBarsChanged: root.writeCavaConf()
+
+        function startProc(): void {
+            cavaProc.running = true;
+        }
+
+        function ref(sender): void {
+            if (_refs.includes(sender))
+                return;
+            _refs.push(sender);
+            if (_refs.length === 1)
+                startProc();
+        }
+
+        function unref(sender): void {
+            const index = _refs.indexOf(sender);
+            if (index === -1)
+                return;
+            _refs.splice(index, 1);
+            if (_refs.length === 0)
+                cavaProc.running = false;
+        }
     }
 
-    BeatTracker {
-        id: beatTracker
+    // Quickshell Processes only spawn when declared at this level: as named
+    // properties on a nested property-QtObject they silently never start.
+    property Timer cavaRestart: Timer {
+        interval: 500
+        onTriggered: root.cavaImpl.startProc()
+    }
+
+    property FileView cavaConf: FileView {
+        path: `${Paths.state}/cava.conf`
+    }
+
+    property Process cavaProc: Process {
+        stdout: SplitParser {
+            onRead: data => {
+                const frame = CavaParser.parseFrame(data, 100, root.cavaImpl.bars);
+                if (frame)
+                    root.cavaImpl.values = frame;
+            }
+        }
+        onExited: {
+            if (root.cavaImpl._refs.length > 0)
+                root.cavaRestart.restart();
+        }
+    }
+
+    function writeCavaConf(): void {
+        // FileView clears its internal path when the initial read fails (the
+        // conf does not exist before the first write), so re-assert it or
+        // setText fails with "no path specified".
+        cavaConf.path = `${Paths.state}/cava.conf`;
+        cavaConf.setText(`[general]
+bars = ${root.cavaImpl.bars}
+framerate = 30
+noise_reduction = 0.85
+stereo = false
+
+[input]
+method = pipewire
+source = auto
+channels = 1
+
+[output]
+method = raw
+raw_target = /dev/stdout
+data_format = ascii
+ascii_max_range = 100
+bar_delimiter = 32
+`);
     }
 }
