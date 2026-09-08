@@ -19,8 +19,7 @@ Searcher {
     property bool previewColourLock
 
     function setWallpaper(path: string): void {
-        actualCurrent = path;
-        Quickshell.execDetached(["caelestia", "wallpaper", "-f", path, ...smartArg]);
+        Quickshell.execDetached(["jarvos-desktop", "wallpaper", "-f", path, ...smartArg]);
     }
 
     function preview(path: string): void {
@@ -81,9 +80,11 @@ Searcher {
     Process {
         id: getPreviewColoursProc
 
-        command: ["caelestia", "wallpaper", "-p", root.previewPath, ...root.smartArg]
+        command: ["jarvos-desktop", "wallpaper", "-p", root.previewPath, ...root.smartArg]
         stdout: StdioCollector {
             onStreamFinished: {
+                if (!text.trim())
+                    return;
                 Colours.load(text, true);
                 Colours.showPreview = true;
             }

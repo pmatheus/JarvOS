@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+base=$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)
+entry="$base/lib/desktop.py"
+[[ -f "$entry" ]] || entry=/usr/share/jarvos/lib/desktop.py
+exec uv run --no-project --python /usr/bin/python3 "$entry" "$@"

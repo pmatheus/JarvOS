@@ -75,7 +75,7 @@ JsonObject {
             name: "Random",
             icon: "casino",
             description: "Switch to a random wallpaper",
-            command: ["caelestia", "wallpaper", "-r"],
+            command: ["jarvos-desktop", "wallpaper", "-r"],
             enabled: true,
             dangerous: false
         },
@@ -139,7 +139,7 @@ JsonObject {
             name: "Settings",
             icon: "settings",
             description: "Configure the shell",
-            command: ["caelestia", "shell", "controlCenter", "open"],
+            command: ["jarvos-desktop", "shell", "controlCenter", "open"],
             enabled: true,
             dangerous: false
         }

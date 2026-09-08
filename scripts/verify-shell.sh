@@ -25,13 +25,18 @@ else
     bad "quickshell-jarvos.service not active"
 fi
 
-LOG=$(timeout 5 qs log -c caelestia 2>&1)
+LOG=$(timeout 5 qs log -p "$HOME/.config/quickshell/jarvos/shell.qml" 2>&1)
+if ! bin/jarvos-shell status >/dev/null 2>&1; then
+    bad "native JarvOS IPC unavailable"
+else
+    ok "native JarvOS IPC responding"
+fi
 QML_ERRS=$(printf '%s\n' "$LOG" | grep -E 'WARN|ERROR' | grep -cE 'QML|Unable to assign|TypeError|ReferenceError|is not a function|\.qml' || true)
 DBUS_ERRS=$(printf '%s\n' "$LOG" | grep -ciE 'dbus|StatusNotifier' || true)
 if [ "$QML_ERRS" -eq 0 ]; then
     ok "no QML errors in the current session log"
 else
-    bad "$QML_ERRS QML errors/warnings — inspect with: qs log -c caelestia"
+    bad "$QML_ERRS QML errors/warnings — inspect with: qs log -p ~/.config/quickshell/jarvos/shell.qml"
 fi
 if [ "$DBUS_ERRS" -gt 0 ]; then
     printf '  info %s external dbus/tray warnings (not QML — a tray app misbehaving)\n' "$DBUS_ERRS"
@@ -49,8 +54,11 @@ else
     bad "no inotifywait watching Wallpapers — new wallpapers would not appear live"
 fi
 
-REMAINING=$(grep -rl 'import Caelestia' config/.config/quickshell/jarvos --include='*.qml' | wc -l)
-printf '  info %s files still import Caelestia (ServiceRef keep + rollout steps 6-9)\n' "$REMAINING"
+if rg -n 'import Caelestia|\["caelestia",' config/.config/quickshell/jarvos -g '*.qml'; then
+    bad "Caelestia executable or plugin dependency remains"
+else
+    ok "no Caelestia executable or QML plugin dependencies"
+fi
 
 echo "== live-change drill"
 WALLS="$HOME/Pictures/Wallpapers"

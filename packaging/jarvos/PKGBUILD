@@ -6,11 +6,15 @@ pkgdesc="JarvOS runtime: maintenance commands, migrations, and shipped defaults"
 arch=('any')
 url="https://github.com/jarvos/JarvOS"
 license=('GPL3')
-depends=('bash' 'git' 'pacman' 'util-linux')
+depends=('bash' 'git' 'pacman' 'util-linux' 'uv' 'python' 'file')
 optdepends=(
     'snapper: rollback point before each update'
     'yay: AUR package updates'
     'quickshell-git: the JarvOS shell'
+    'python-materialyoucolor: wallpaper palettes'
+    'python-pillow: wallpaper image sampling'
+    'awww: wallpaper display'
+    'gpu-screen-recorder: desktop recordings'
 )
 source=()
 sha256sums=()
@@ -26,6 +30,8 @@ package() {
     # The library, at the path every command's preamble falls back to.
     install -Dm644 "$root/lib/jarvos-common.sh" \
         "$pkgdir/usr/share/jarvos/lib/jarvos-common.sh"
+    install -Dm644 "$root/lib/desktop.py" \
+        "$pkgdir/usr/share/jarvos/lib/desktop.py"
 
     # Migrations ship 0644 and shebang-less: the runner supplies strictness,
     # and a stray ./ must not be able to fire one.

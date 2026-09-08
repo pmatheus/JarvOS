@@ -8,6 +8,19 @@ import Quickshell.Io
 Scope {
     id: root
 
+    IpcHandler {
+        target: "jarvos"
+        function ping(): string { return "ok"; }
+        function panel(name: string, action: string): string {
+            const allowed = ["launcher", "sidebar", "session", "dashboard", "utilities", "osd"];
+            const v = Visibilities.getForActive();
+            if (!v || !allowed.includes(name) || !["open", "close", "toggle"].includes(action))
+                return "unknown";
+            v[name] = action === "toggle" ? !v[name] : action === "open";
+            return "ok";
+        }
+    }
+
     readonly property bool hasFullscreen: Hypr.focusedWorkspace?.toplevels.values.some(t => t.lastIpcObject.fullscreen === 2) ?? false
 
     CustomShortcut {

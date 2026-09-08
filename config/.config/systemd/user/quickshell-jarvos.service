@@ -7,7 +7,8 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/qs -c caelestia
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
+ExecStart=/usr/bin/env jarvos-shell start
 Restart=no
 
 [Install]

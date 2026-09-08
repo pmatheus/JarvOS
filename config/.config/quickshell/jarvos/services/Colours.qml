@@ -75,7 +75,7 @@ Singleton {
     }
 
     function setMode(mode: string): void {
-        Quickshell.execDetached(["caelestia", "scheme", "set", "--notify", "-m", mode]);
+        Quickshell.execDetached(["jarvos-desktop", "scheme", "set", "--notify", "-m", mode]);
     }
 
     FileView {

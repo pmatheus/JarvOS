@@ -38,7 +38,7 @@ CollapsibleSection {
                         const variant = modelData.variant;
 
                         Schemes.currentVariant = variant;
-                        Quickshell.execDetached(["caelestia", "scheme", "set", "-v", variant]);
+                        Quickshell.execDetached(["jarvos-desktop", "scheme", "set", "-v", variant]);
 
                         Qt.callLater(() => {
                             reloadTimer.restart();

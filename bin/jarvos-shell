@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Start and control the original JarvOS QML shell.
+set -euo pipefail
+base=$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)
+export PATH="$base/bin:$HOME/.local/bin:$PATH"
+case "${1:---help}" in
+    start)
+        jarvos-desktop init
+        exec qs -p "${JARVOS_SHELL_PATH:-$HOME/.config/quickshell/jarvos/shell.qml}" ;;
+    status) exec jarvos-desktop shell jarvos ping ;;
+    ipc) shift; exec jarvos-desktop shell "$@" ;;
+    restart) exec systemctl --user restart quickshell-jarvos.service ;;
+    -h|--help) echo 'Usage: jarvos-shell start|status|restart|ipc TARGET METHOD [ARG ...]' ;;
+    *) echo 'Unknown command. Use --help.' >&2; exit 2 ;;
+esac

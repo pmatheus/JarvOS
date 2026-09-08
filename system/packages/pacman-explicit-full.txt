@@ -28,8 +28,6 @@ brave-bin
 brightnessctl
 btrfs-assistant
 btrfs-progs
-caelestia-cli
-caelestia-shell
 cava
 chafa
 chntpw
