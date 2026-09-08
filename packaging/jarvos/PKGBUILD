@@ -22,8 +22,6 @@ package() {
     # installed anywhere at all.
     install -d "$pkgdir/usr/bin"
     install -Dm755 "$root"/bin/jarvos-* -t "$pkgdir/usr/bin/"
-    install -Dm755 "$root/scripts/jarvos-module-install" \
-        "$pkgdir/usr/share/jarvos/scripts/jarvos-module-install"
 
     # The library, at the path every command's preamble falls back to.
     install -Dm644 "$root/lib/jarvos-common.sh" \
