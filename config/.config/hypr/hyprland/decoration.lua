@@ -1,0 +1,34 @@
+hl.config({
+    decoration = {
+        rounding = 15,
+
+        blur = {
+            enabled           = true,
+            xray              = false,
+            special           = false,
+            ignore_opacity    = true,
+            new_optimizations = true,
+            popups            = true,
+            input_methods     = true,
+            size              = 10,
+            passes            = 3,
+            noise             = 0.015,
+            contrast          = 1.1,
+            brightness        = 1.0,
+            vibrancy          = 0.2,
+            vibrancy_darkness = 0.3,
+        },
+
+        shadow = {
+            enabled      = true,
+            range        = 25,
+            render_power = 3,
+            color        = "rgba(0c151570)",
+            offset       = "0 2",
+            scale        = 0.98,
+        },
+
+        dim_inactive = false,
+        dim_strength = 0.08,
+    },
+})

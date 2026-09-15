@@ -44,6 +44,10 @@ JsonObject {
             enabled: true
         },
         {
+            id: "updates",
+            enabled: true
+        },
+        {
             id: "tray",
             enabled: true
         },

@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# jarvos-hypr-safe — apply risky Hyprland config changes with a snapshot and an
+# automatic rollback when the reload does not come up clean.
+#
+#   jarvos-hypr-safe snapshot [label]   snapshot ~/.config/hypr, print the path
+#   jarvos-hypr-safe verify             reload and check configerrors + monitors
+#   jarvos-hypr-safe rollback [path]    restore the latest (or given) snapshot
+#   jarvos-hypr-safe run -- <cmd...>    snapshot, run <cmd>, verify, roll back on failure
+#   jarvos-hypr-safe list               list snapshots
+#
+# Snapshots live under ~/.local/state/jarvos/hypr-snapshots (last 10 kept).
+set -uo pipefail
+
+CONF="${JARVOS_HYR_CONF:-$HOME/.config/hypr}"
+SNAP_DIR="${JARVOS_HYR_SNAPSHOTS:-$HOME/.local/state/jarvos/hypr-snapshots}"
+KEEP="${JARVOS_HYR_SNAPSHOTS_KEEP:-10}"
+
+say() { printf '%s\n' "$*"; }
+err() { printf '%s\n' "$*" >&2; }
+
+hypr_running() { command -v hyprctl >/dev/null 2>&1 && hyprctl version >/dev/null 2>&1; }
+
+prune() {
+    local snapshots
+    mapfile -t snapshots < <(find "$SNAP_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort)
+    local count="${#snapshots[@]}"
+    if (( count > KEEP )); then
+        local i
+        for ((i = 0; i < count - KEEP; i++)); do
+            rm -rf "${SNAP_DIR:?}/${snapshots[$i]}"
+        done
+    fi
+}
+
+cmd_snapshot() {
+    local label="${1:-}"
+    [[ -d "$CONF" ]] || { err "no config dir at $CONF"; return 1; }
+    local stamp; stamp="$(date +%Y%m%d-%H%M%S)"
+    [[ -n "$label" ]] && stamp="${stamp}-${label}"
+    local dest="${SNAP_DIR}/${stamp}"
+    mkdir -p "$dest"
+    cp -a "$CONF/." "$dest/"
+    prune
+    say "$dest"
+}
+
+latest_snapshot() {
+    find "$SNAP_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort | tail -1
+}
+
+cmd_list() {
+    [[ -d "$SNAP_DIR" ]] || { say "no snapshots yet"; return 0; }
+    find "$SNAP_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort
+}
+
+cmd_verify() {
+    if ! hypr_running; then
+        err "Hyprland not answering hyprctl; cannot verify a live reload"
+        return 0
+    fi
+    hyprctl reload >/dev/null 2>&1 || { err "hyprctl reload failed"; return 1; }
+    sleep 1
+    local errors
+    errors="$(hyprctl configerrors 2>/dev/null)"
+    if [[ -n "$errors" ]]; then
+        err "config errors after reload:"
+        printf '%s\n' "$errors" >&2
+        return 1
+    fi
+    if ! hyprctl monitors >/dev/null 2>&1; then
+        err "Hyprland stopped responding after reload"
+        return 1
+    fi
+    say "verify ok (no config errors, compositor responsive)"
+    return 0
+}
+
+cmd_rollback() {
+    local snap="${1:-}"
+    if [[ -z "$snap" ]]; then
+        local name; name="$(latest_snapshot)"
+        [[ -n "$name" ]] || { err "no snapshot to roll back to"; return 1; }
+        snap="${SNAP_DIR}/${name}"
+    fi
+    [[ -d "$snap" ]] || { err "snapshot not found: $snap"; return 1; }
+    # Clear the live config so files deleted after the snapshot do not survive.
+    rm -rf "${CONF:?}/." 2>/dev/null || true
+    mkdir -p "$CONF"
+    cp -a "$snap/." "$CONF/"
+    say "restored $snap -> $CONF"
+    cmd_verify
+}
+
+cmd_run() {
+    shift # drop "run"
+    [[ "${1:-}" == "--" ]] && shift
+    if [[ $# -eq 0 ]]; then err "run needs a command after --"; return 2; fi
+    local snap
+    snap="$(cmd_snapshot "pre-run")" || return 1
+    say "snapshot: $snap"
+    if ! "$@"; then
+        err "command failed; rolling back from $snap"
+        cmd_rollback "$snap"
+        return 1
+    fi
+    if ! cmd_verify; then
+        err "verify failed; rolling back from $snap"
+        cmd_rollback "$snap"
+        return 1
+    fi
+    say "command applied and verified"
+}
+
+case "${1:-list}" in
+    snapshot) cmd_snapshot "${2:-}" ;;
+    list) cmd_list ;;
+    verify) cmd_verify ;;
+    rollback) cmd_rollback "${2:-}" ;;
+    run) cmd_run "$@" ;;
+    *)
+        err "unknown command: $1"
+        sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//' >&2
+        exit 2
+        ;;
+esac

@@ -116,6 +116,7 @@ Item {
 
     function formatPercent(val: real): string {
         if (val === undefined || val === null || isNaN(val)) return "0%";
+        if (val >= 0.99) return "Exhausted";
         return Math.round(val * 100) + "%";
     }
 
@@ -146,11 +147,14 @@ Item {
             const now = Date.now();
             const diff = target - now;
             if (diff <= 0) return "resets soon";
-            const hours = Math.floor(diff / (1000 * 60 * 60));
+            const at = new Date(isoStr);
+            const clock = at.toLocaleTimeString(Qt.locale(), "HH:mm");
+            const mins = Math.floor(diff / 60000);
+            const hours = Math.floor(mins / 60);
             const days = Math.floor(hours / 24);
-            const remHours = hours % 24;
-            if (days > 0) return `resets in ${days}d ${remHours}h`;
-            return `resets in ${hours}h`;
+            if (days > 0) return `resets ${at.toLocaleDateString(Qt.locale(), "d MMM")} ${clock}`;
+            if (hours > 0) return `resets ${clock} (${hours}h ${mins % 60}m)`;
+            return `resets ${clock} (${mins}m)`;
         } catch (e) {
             return "";
         }
@@ -379,11 +383,14 @@ Item {
                         radius: Appearance.rounding.small
                         color: Colours.palette.m3secondaryContainer
                         implicitHeight: tierText.implicitHeight + 4
-                        implicitWidth: tierText.implicitWidth + 12
+                        implicitWidth: Math.min(tierText.implicitWidth + 12, root.contentWidth * 0.5)
 
                         StyledText {
                             id: tierText
                             anchors.centerIn: parent
+                            width: parent.width - 12
+                            elide: Text.ElideRight
+                            horizontalAlignment: Text.AlignHCenter
                             text: root.currentProvider?.tierLabel || "Active"
                             font.bold: true
                             font.pointSize: Appearance.font.size.smaller * 0.9
@@ -398,14 +405,14 @@ Item {
                     spacing: Appearance.spacing.small
 
                     StyledText {
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
                         text: `Today: ${root.currentProvider?.todayPrompts || 0} prompts · ${root.formatTokens(root.currentProvider?.todayTotalTokens || 0)} tokens`
                         font.pointSize: Appearance.font.size.smaller * 0.9
                         font.family: Appearance.font.family.mono
                         font.bold: true
                         color: Colours.palette.m3onSurfaceVariant
                     }
-
-                    Item { Layout.fillWidth: true }
 
                     StyledText {
                         text: root.currentProvider?.updatedAt ? `Updated ${root.formatLastUpdate(root.currentProvider?.updatedAt)}` : ""
@@ -429,12 +436,12 @@ Item {
                             Layout.fillWidth: true
 
                             StyledText {
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
                                 text: limitRow.modelData.label || "Limit"
                                 font.pointSize: Appearance.font.size.smaller
                                 color: Colours.palette.m3onSurface
                             }
-
-                            Item { Layout.fillWidth: true }
 
                             StyledText {
                                 text: root.formatTimeRemaining(limitRow.modelData.resetsAt)
@@ -482,6 +489,16 @@ Item {
                             }
                         }
                     }
+                }
+
+                // Why the meters are stale or missing (collector-provided)
+                StyledText {
+                    Layout.fillWidth: true
+                    visible: (root.currentProvider?.usageStatusText || "").length > 0
+                    text: root.currentProvider?.usageStatusText || ""
+                    font.pointSize: Appearance.font.size.smaller * 0.85
+                    color: Colours.palette.m3outline
+                    elide: Text.ElideRight
                 }
 
                 // 7-Day Activity Mini-Bars

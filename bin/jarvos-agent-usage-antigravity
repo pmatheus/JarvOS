@@ -2,168 +2,351 @@
 # jarvos:summary=Print the Antigravity (agy) usage record as JSON
 # jarvos:args=[--force] [--limits-only]
 # jarvos:hidden=true
-"""Collect Antigravity usage into one display-ready JSON record.
+"""Collect Antigravity CLI usage into one display-ready JSON record.
 
-Scans ~/.gemini/antigravity-cli/brain/ transcripts, extracting session counts,
-daily activity, and model stats.
+Local stats come from the per-conversation SQLite databases under
+~/.gemini/antigravity-cli/conversations/: every step row carries a protobuf
+metadata blob with its creation time and, for model steps, the real token
+counts (the same `model_usage` message the CLI logs itself).
+
+Quota comes from the CLI's own language server. Antigravity documents quota
+only through the interactive `/usage` and `/credits` panels
+(https://antigravity.google/docs/cli/commands/usage/), but every running agy
+spawns a language server on a random localhost port that answers
+`LanguageServerService/GetUserStatus` with the plan, credits and a
+`quotaInfo` (remaining fraction plus reset time) per model. The probe needs a
+running agy, so the last answer is cached and shown until its window resets.
 """
 
 import datetime as dt
-import glob
 import json
 import os
 import re
+import sqlite3
+import subprocess
 import sys
+import tempfile
+import time
+import urllib.request
 from pathlib import Path
+from typing import Any
 
 AGENT_ID = "antigravity"
 AGENT_NAME = "Antigravity (AGY)"
+PROBE_MIN_INTERVAL_SECONDS = 15
+RPC_PATH = "/exa.language_server_pb.LanguageServerService/GetUserStatus"
+AUTH_HELP = "Start `agy` (any session) to refresh quota. It is read from the CLI's local language server."
 
-def check_rate_limit() -> tuple[bool, str]:
-    """Check recent CLI logs for active RESOURCE_EXHAUSTED rate limits.
-    Returns (is_active, resets_at_iso).
-    """
-    log_dir = Path(os.path.expanduser("~/.gemini/antigravity-cli/log"))
-    if not log_dir.is_dir():
-        return False, ""
+# Step metadata protobuf, confirmed against the CLI's own log line
+# "Last step: ... model_usage:{model: input_tokens: output_tokens: ...}".
+F_CREATED_AT = 1
+F_MODEL_USAGE = 9
+MU_MODEL = 1
+MU_INPUT = 2
+MU_OUTPUT = 3
+MU_CACHE_READ = 5
+STEP_USER_INPUT = 14
 
-    log_files = sorted(log_dir.glob("cli-*.log"), key=os.path.getmtime, reverse=True)
-    now = dt.datetime.now().astimezone()
 
-    for lf in log_files[:10]:
-        try:
-            with open(lf, "r", encoding="utf-8", errors="ignore") as f:
-                lines = f.readlines()
-            for line in reversed(lines):
-                if "RESOURCE_EXHAUSTED" in line and "Resets in" in line:
-                    m_time = re.search(r"\b[IWEF](\d{2})(\d{2})\s+(\d{2}):(\d{2}):(\d{2})", line)
-                    m_reset = re.search(r"Resets in (?:(\d+)m)?(?:(\d+)s)?", line)
-                    if m_time and m_reset:
-                        mo, day, hr, mn, sc = map(int, m_time.groups())
-                        log_dt = dt.datetime(now.year, mo, day, hr, mn, sc).replace(tzinfo=now.tzinfo)
-                        mins = int(m_reset.group(1) or 0)
-                        secs = int(m_reset.group(2) or 0)
-                        reset_dt = log_dt + dt.timedelta(minutes=mins, seconds=secs)
-                        if now < reset_dt:
-                            return True, reset_dt.isoformat()
-                        return False, ""
-        except Exception:
-            continue
+def state_dir() -> Path:
+  return Path(os.path.expanduser("~/.gemini/antigravity-cli"))
 
-    return False, ""
 
-def recent_date_strings() -> list[str]:
-    today = dt.datetime.now().date()
-    return [(today - dt.timedelta(days=offset)).strftime("%Y-%m-%d") for offset in range(6, -1, -1)]
+def cache_root() -> Path:
+  root = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "jarvos" / "agent-usage"
+  root.mkdir(parents=True, exist_ok=True)
+  return root
 
-def main():
-    brain_dir = Path(os.path.expanduser("~/.gemini/antigravity-cli/brain"))
-    dates = recent_date_strings()
-    recent_by_day = {d: 0 for d in dates}
-    today_str = dt.datetime.now().date().strftime("%Y-%m-%d")
-    
-    today_tokens = 0
-    today_tokens_by_model: dict[str, int] = {}
-    total_prompts = 0
-    today_prompts = 0
-    total_sessions = 0
-    today_sessions = 0
-    active_dates: set[str] = set()
-    model_usage: dict[str, dict[str, int]] = {}
 
-    if brain_dir.is_dir():
-        for conv_dir in brain_dir.iterdir():
-            if not conv_dir.is_dir():
-                continue
-            total_sessions += 1
-            log_file = conv_dir / ".system_generated" / "logs" / "transcript.jsonl"
-            if not log_file.is_file():
-                continue
-            
-            session_has_today = False
-            try:
-                with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            item = json.loads(line)
-                            step_type = item.get("type", "")
-                            created_at = item.get("created_at", "")
-                            date_part = created_at[:10] if len(created_at) >= 10 else ""
-                            
-                            if date_part:
-                                active_dates.add(date_part)
-                                if date_part in recent_by_day:
-                                    recent_by_day[date_part] += 1
-                                if date_part == today_str:
-                                    session_has_today = True
+def write_json(path: Path, payload: dict[str, Any]) -> None:
+  handle_fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+  tmp = Path(tmp_name)
+  try:
+    with os.fdopen(handle_fd, "w", encoding="utf-8") as handle:
+      json.dump(payload, handle)
+    tmp.replace(path)
+  finally:
+    if tmp.exists():
+      tmp.unlink()
 
-                            if step_type == "USER_INPUT":
-                                total_prompts += 1
-                                if date_part == today_str:
-                                    today_prompts += 1
-                            elif step_type == "PLANNER_RESPONSE":
-                                model_name = "gemini-3.8-flash"
-                                if model_name not in model_usage:
-                                    model_usage[model_name] = {
-                                        "inputTokens": 0,
-                                        "outputTokens": 0,
-                                        "cacheReadInputTokens": 0,
-                                        "cacheCreationInputTokens": 0
-                                    }
-                                model_usage[model_name]["outputTokens"] += 500
-                                model_usage[model_name]["inputTokens"] += 2000
-                                if date_part == today_str:
-                                    today_tokens += 2500
-                                    today_tokens_by_model[model_name] = today_tokens_by_model.get(model_name, 0) + 2500
-                        except Exception:
-                            continue
-            except Exception:
-                continue
-            
-            if session_has_today:
-                today_sessions += 1
 
-    recent_days = [{"date": d, "messageCount": recent_by_day[d]} for d in dates]
+def read_json(path: Path) -> dict[str, Any]:
+  try:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data if isinstance(data, dict) else {}
+  except Exception:
+    return {}
 
-    is_exhausted, resets_at = check_rate_limit()
 
-    limits = [
-        {
-            "label": "Burst / Rate Limit",
-            "percent": 1.0 if is_exhausted else 0.0,
-            "resetsAt": resets_at if is_exhausted else ""
-        },
-        {
-            "label": "Session Quota",
-            "percent": 1.0 if is_exhausted else 0.0,
-            "resetsAt": resets_at if is_exhausted else ""
-        }
-    ]
+# ------------------------------------------------------------- protobuf
 
-    record = {
-        "schemaVersion": 1,
-        "id": AGENT_ID,
-        "name": AGENT_NAME,
-        "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
-        "ready": True,
-        "hasLocalStats": True,
-        "todayPrompts": today_prompts,
-        "todaySessions": today_sessions,
-        "todayTotalTokens": today_tokens,
-        "todayTokensByModel": today_tokens_by_model,
-        "recentDays": recent_days,
-        "totalPrompts": total_prompts,
-        "totalSessions": total_sessions,
-        "activeDays": len(active_dates),
-        "activeDates": sorted(list(active_dates)),
-        "tierLabel": "Quota Exhausted" if is_exhausted else "Student / Pro ($20/mo)",
-        "modelUsage": model_usage,
-        "limits": limits
-    }
-    print(json.dumps(record, indent=2))
+def varint(buf: bytes, i: int) -> tuple[int, int]:
+  result = 0
+  shift = 0
+  while True:
+    byte = buf[i]
+    i += 1
+    result |= (byte & 0x7F) << shift
+    shift += 7
+    if not byte & 0x80:
+      return result, i
+
+
+def decode(buf: bytes) -> list[tuple[int, int, Any]]:
+  """Wire-level decode: list of (field, wire type, value)."""
+  i = 0
+  out = []
+  while i < len(buf):
+    key, i = varint(buf, i)
+    field, wire = key >> 3, key & 7
+    if wire == 0:
+      value, i = varint(buf, i)
+    elif wire == 2:
+      length, i = varint(buf, i)
+      value = buf[i:i + length]
+      i += length
+    elif wire == 1:
+      value = buf[i:i + 8]
+      i += 8
+    elif wire == 5:
+      value = buf[i:i + 4]
+      i += 4
+    else:
+      raise ValueError(f"unsupported wire type {wire}")
+    out.append((field, wire, value))
+  return out
+
+
+def fields(buf: bytes) -> dict[int, Any]:
+  return {field: value for field, _wire, value in decode(buf)}
+
+
+def placeholder_name(enum: int) -> str:
+  # The DB stores the enum number; the status RPC and the logs name the same
+  # model MODEL_PLACEHOLDER_M<n-1000> (1318 <-> M318, checked on one step).
+  return f"MODEL_PLACEHOLDER_M{enum - 1000 if enum >= 1000 else enum}"
+
+
+# ---------------------------------------------------------- local stats
+
+def new_model_bucket() -> dict[str, int]:
+  return {"inputTokens": 0, "outputTokens": 0, "cacheReadInputTokens": 0, "cacheCreationInputTokens": 0}
+
+
+def collect_local() -> dict[str, Any]:
+  today = dt.datetime.now().date()
+  today_str = today.isoformat()
+  recent = [(today - dt.timedelta(days=offset)).isoformat() for offset in range(6, -1, -1)]
+  recent_prompts = {day: 0 for day in recent}
+  active_dates: set[str] = set()
+  model_usage: dict[str, dict[str, int]] = {}
+  today_tokens_by_model: dict[str, int] = {}
+  totals = {"totalPrompts": 0, "todayPrompts": 0, "totalSessions": 0, "todaySessions": 0, "todayTotalTokens": 0}
+
+  for db_path in sorted((state_dir() / "conversations").glob("*.db")):
+    try:
+      conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+      rows = conn.execute("SELECT step_type, metadata FROM steps").fetchall()
+      conn.close()
+    except Exception:
+      continue
+    if not rows:
+      continue
+    totals["totalSessions"] += 1
+    session_today = False
+    for step_type, metadata in rows:
+      try:
+        top = fields(metadata or b"")
+      except Exception:
+        continue
+      day = ""
+      created = top.get(F_CREATED_AT)
+      if isinstance(created, bytes):
+        seconds = fields(created).get(1)
+        if isinstance(seconds, int):
+          day = dt.datetime.fromtimestamp(seconds).date().isoformat()
+      if day:
+        active_dates.add(day)
+        if day == today_str:
+          session_today = True
+      if step_type == STEP_USER_INPUT:
+        totals["totalPrompts"] += 1
+        if day in recent_prompts:
+          recent_prompts[day] += 1
+        if day == today_str:
+          totals["todayPrompts"] += 1
+      usage = top.get(F_MODEL_USAGE)
+      if isinstance(usage, bytes):
+        mu = fields(usage)
+        name = placeholder_name(mu.get(MU_MODEL, 0))
+        bucket = model_usage.setdefault(name, new_model_bucket())
+        inp = mu.get(MU_INPUT, 0)
+        out = mu.get(MU_OUTPUT, 0)
+        cache = mu.get(MU_CACHE_READ, 0)
+        bucket["inputTokens"] += inp
+        bucket["outputTokens"] += out
+        bucket["cacheReadInputTokens"] += cache
+        if day == today_str:
+          step_tokens = inp + out + cache
+          totals["todayTotalTokens"] += step_tokens
+          today_tokens_by_model[name] = today_tokens_by_model.get(name, 0) + step_tokens
+    if session_today:
+      totals["todaySessions"] += 1
+
+  return {
+    **totals,
+    "todayTokensByModel": today_tokens_by_model,
+    "recentDays": [{"date": day, "messageCount": recent_prompts[day]} for day in recent],
+    "activeDays": len(active_dates),
+    "activeDates": sorted(active_dates),
+    "modelUsage": model_usage,
+  }
+
+
+def rename_models(record: dict[str, Any], labels: dict[str, str]) -> None:
+  for key in ("modelUsage", "todayTokensByModel"):
+    record[key] = {labels.get(name, name): value for name, value in record[key].items()}
+
+
+# ---------------------------------------------------------------- quota
+
+def listening_ports() -> list[int]:
+  """Ports of every running agy language server, from ss."""
+  try:
+    out = subprocess.run(["ss", "-ltnpH"], capture_output=True, text=True, timeout=3).stdout
+  except Exception:
+    return []
+  ports = []
+  for line in out.splitlines():
+    if 'users:(("agy"' not in line:
+      continue
+    match = re.search(r"[:\]](\d+)\s+\S+\s+users", line)
+    if match:
+      ports.append(int(match.group(1)))
+  return sorted(set(ports))
+
+
+def get_user_status(port: int) -> dict[str, Any] | None:
+  req = urllib.request.Request(
+    f"http://127.0.0.1:{port}{RPC_PATH}",
+    data=b'{"metadata":{}}',
+    headers={"Content-Type": "application/json", "Connect-Protocol-Version": "1"},
+    method="POST",
+  )
+  try:
+    with urllib.request.urlopen(req, timeout=3) as resp:
+      payload = json.loads(resp.read().decode("utf-8"))
+  except Exception:
+    return None
+  status = payload.get("userStatus") if isinstance(payload, dict) else None
+  return status if isinstance(status, dict) else None
+
+
+def quota_from_status(status: dict[str, Any]) -> dict[str, Any]:
+  configs = status.get("cascadeModelConfigData", {}).get("clientModelConfigs", [])
+  labels: dict[str, str] = {}
+  buckets: dict[tuple[float, str], list[str]] = {}
+  for cfg in configs:
+    label = cfg.get("label", "")
+    enum = cfg.get("modelOrAlias", {}).get("model", "")
+    if enum and label:
+      labels[enum] = label
+    quota = cfg.get("quotaInfo") or {}
+    if "remainingFraction" not in quota and "resetTime" not in quota:
+      continue
+    key = (float(quota.get("remainingFraction", 1.0)), str(quota.get("resetTime", "")))
+    buckets.setdefault(key, []).append(label)
+
+  limits = []
+  for (remaining, resets_at), names in sorted(buckets.items(), key=lambda item: item[0][0]):
+    # One bucket is shared by a whole vendor family, and the row has room for
+    # a short label only: "Gemini", "Claude · GPT-OSS".
+    families = []
+    for name in names:
+      family = name.split(" ", 1)[0]
+      if family not in families:
+        families.append(family)
+    limits.append({"label": " · ".join(families), "percent": max(0.0, 1.0 - remaining), "resetsAt": resets_at})
+
+  plan = status.get("planStatus", {})
+  tier = status.get("userTier", {}).get("name") or plan.get("planInfo", {}).get("planName") or "Antigravity"
+  tier = tier.replace("Google ", "")
+  credits = plan.get("availablePromptCredits")
+  tier_label = f"{tier} · {credits} credits" if isinstance(credits, (int, float)) else tier
+  return {"limits": limits, "tierLabel": tier_label, "modelLabels": labels}
+
+
+def limit_window_open(entry: dict[str, Any], now: dt.datetime) -> bool:
+  resets = entry.get("resetsAt", "")
+  if not resets:
+    return True
+  try:
+    return dt.datetime.fromisoformat(resets.replace("Z", "+00:00")) > now
+  except ValueError:
+    return False
+
+
+def collect_quota(force: bool) -> dict[str, Any]:
+  result: dict[str, Any] = {"limits": [], "tierLabel": "", "modelLabels": {}, "usageStatusText": "", "authHelpText": AUTH_HELP}
+  probe_cache = cache_root() / "antigravity-limits.json"
+  cached = read_json(probe_cache)
+  now = dt.datetime.now(dt.timezone.utc)
+  fallback = [e for e in cached.get("limits", []) if isinstance(e, dict) and limit_window_open(e, now)]
+  result["tierLabel"] = cached.get("tierLabel", "")
+  result["modelLabels"] = cached.get("modelLabels", {})
+
+  fetched_at = float(cached.get("fetchedAtMs", 0)) / 1000
+  if fallback and not force and time.time() - fetched_at < PROBE_MIN_INTERVAL_SECONDS:
+    result["limits"] = fallback
+    return result
+
+  for port in listening_ports():
+    status = get_user_status(port)
+    if status is None:
+      continue
+    quota = quota_from_status(status)
+    result.update(quota)
+    write_json(probe_cache, {"fetchedAtMs": round(time.time() * 1000), **quota})
+    return result
+
+  result["limits"] = fallback
+  result["usageStatusText"] = "Last known quota" if fallback else "Quota unavailable: agy not running"
+  return result
+
+
+# --------------------------------------------------------------- record
+
+def main() -> int:
+  force = "--force" in sys.argv[1:]
+  limits_only = "--limits-only" in sys.argv[1:]
+  usage_dir = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "jarvos/agents/usage"
+
+  if limits_only:
+    previous = read_json(usage_dir / f"{AGENT_ID}.json")
+    local = {key: previous[key] for key in previous if key not in ("limits", "tierLabel", "usageStatusText", "authHelpText", "updatedAt")}
+    if not local:
+      local = collect_local()
+  else:
+    local = collect_local()
+
+  quota = collect_quota(force)
+  labels = quota.pop("modelLabels", {})
+  if "modelUsage" in local and "todayTokensByModel" in local:
+    rename_models(local, labels)
+
+  record = {
+    "schemaVersion": 1,
+    "id": AGENT_ID,
+    "name": AGENT_NAME,
+    "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
+    "ready": True,
+    "hasLocalStats": True,
+    **local,
+    **quota,
+  }
+  print(json.dumps(record, indent=2))
+  return 0
+
 
 if __name__ == "__main__":
-    main()
+  sys.exit(main())
