@@ -445,43 +445,24 @@ Scope {
         cheatRoot.keybindColumns = cols;
     }
 
-    Process {
-        id: defaultProc
-        running: true
-        command: ["python3",
-                  `${Quickshell.env("HOME")}/.config/quickshell/scripts/hyprland/get_keybinds.py`,
-                  "--show-hidden",
-                  "--path", `${Quickshell.env("HOME")}/.config/hypr/hyprland/keybinds.conf`]
+    // The Lua Hyprland config declares keybinds and writes this sidecar on load,
+    // upstream and custom/ in one file. It replaces the old get_keybinds.py pass
+    // over keybinds.conf, which cannot read the Lua config.
+    FileView {
+        id: keybindsFile
 
-
-        stdout: SplitParser {
-            onRead: data => {
-                try {
-                    cheatRoot._defaultKb = JSON.parse(data).children ?? [];
-                    cheatRoot._mergeKb();
-                } catch (e) {
-                    console.error("[Cheatsheet] Parse error:", e);
-                }
+        path: `${Quickshell.env("HOME")}/.local/state/quickshell/user/generated/keybinds.json`
+        watchChanges: true
+        onFileChanged: reload()
+        onLoaded: {
+            try {
+                cheatRoot._defaultKb = JSON.parse(text()).children ?? [];
+                cheatRoot._mergeKb();
+            } catch (e) {
+                console.error("[Cheatsheet] Parse error:", e);
             }
         }
-    }
-
-    Process {
-        id: customProc
-        running: true
-        command: ["python3",
-                  `${Quickshell.env("HOME")}/.config/quickshell/scripts/hyprland/get_keybinds.py`,
-                  "--show-hidden",
-                  "--path", `${Quickshell.env("HOME")}/.config/hypr/hyprland/custom/keybinds.conf`]
-
-        stdout: SplitParser {
-            onRead: data => {
-                try {
-                    cheatRoot._customKb = JSON.parse(data).children ?? [];
-                    cheatRoot._mergeKb();
-                } catch (e) {}
-            }
-        }
+        onLoadFailed: err => console.error("[Cheatsheet] Cannot read keybinds.json:", err)
     }
 
     CustomShortcut {

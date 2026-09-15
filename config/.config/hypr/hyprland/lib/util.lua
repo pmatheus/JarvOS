@@ -2,6 +2,11 @@
 local M = {}
 
 M.home = os.getenv("HOME") or ""
+M.config_home = os.getenv("XDG_CONFIG_HOME")
+if not M.config_home or M.config_home == "" then
+    M.config_home = M.home .. "/.config"
+end
+M.hypr_dir = M.config_home .. "/hypr"
 
 -- Expand a leading ~ the way the old .conf files did.
 function M.expand(path)
