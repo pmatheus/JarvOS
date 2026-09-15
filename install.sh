@@ -248,15 +248,18 @@ install_dotfiles() {
     step "Marking shipped migrations as applied..."
     ./bin/jarvos-migrate --mark-all
 
-    # Create default monitors.conf if missing
-    MONITORS_CONF="$XDG_CONFIG_HOME/hypr/hyprland/monitors.conf"
-    if [[ ! -f "$MONITORS_CONF" ]]; then
-        cat > "$MONITORS_CONF" << 'EOF'
-# MONITOR CONFIG — edit for your setup
-# Run `hyprctl monitors` to see device names
-monitor = , preferred, auto, 1
+    # Create the default monitor layout if missing. It goes in custom/, which is
+    # the path hyprland.lua actually requires; a bare monitors.lua next to it is
+    # not in the load chain.
+    MONITORS_LUA="$XDG_CONFIG_HOME/hypr/hyprland/custom/monitors.lua"
+    mkdir -p "$(dirname "$MONITORS_LUA")"
+    if [[ ! -f "$MONITORS_LUA" ]]; then
+        cat > "$MONITORS_LUA" << 'EOF'
+-- MONITOR CONFIG — edit for your setup
+-- Run `hyprctl monitors` to see device names
+hl.monitor({ output = "", mode = "preferred", position = "auto", scale = 1 })
 EOF
-        ok "Created default monitors.conf"
+        ok "Created default custom/monitors.lua"
     fi
 
     # Wallpaper symlink

@@ -20,5 +20,7 @@ hl.gesture({ fingers = 3, direction = "up", action = "special", workspace_name =
 hl.gesture({
     fingers   = 3,
     direction = "down",
-    action    = hl.dsp.exec_cmd("hyprctl dispatch togglespecialworkspace"),
+    action    = function()
+        hl.dispatch(hl.dsp.workspace.toggle_special())
+    end,
 })

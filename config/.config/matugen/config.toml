@@ -6,6 +6,12 @@ input_path = '~/.config/matugen/templates/colors.json'
 output_path = '~/.local/state/quickshell/user/generated/colors.json'
 
 [templates.hyprland]
+input_path = '~/.config/matugen/templates/hyprland/colors.lua'
+output_path = '~/.config/hypr/hyprland/colors.lua'
+
+# The .conf tree is the rollback path for Hyprland 0.56's Lua config. Keep it
+# generated so falling back never lands on stale colours.
+[templates.hyprland_conf]
 input_path = '~/.config/matugen/templates/hyprland/colors.conf'
 output_path = '~/.config/hypr/hyprland/colors.conf'
 

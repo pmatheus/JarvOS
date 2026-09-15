@@ -24,4 +24,9 @@ require("hyprland.colors")
 require("hyprland.keybinds")
 
 -- Custom overrides, loaded last so they win (keeps upstream untouched).
-util.require_dir("~/.config/hypr/hyprland/custom", "hyprland.custom")
+util.require_dir(util.hypr_dir .. "/hyprland/custom", "hyprland.custom")
+
+-- Keybinds feed the QuickShell cheatsheet through a JSON sidecar. Flush after
+-- custom/ so overrides land in the cheatsheet too.
+require("hyprland.lib.keybinds").flush(
+    util.expand("~/.local/state/quickshell/user/generated/keybinds.json"))
