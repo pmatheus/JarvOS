@@ -1,0 +1,28 @@
+hl.config({
+    general = {
+        gaps_in         = 2,
+        gaps_out        = 2,
+        gaps_workspaces = 20,
+
+        border_size = 1,
+        col = {
+            active_border   = "rgba(0DB7D4E6)",
+            inactive_border = "rgba(31313611)",
+        },
+        resize_on_border = true,
+
+        no_focus_fallback = true,
+
+        allow_tearing = true,
+
+        snap = {
+            enabled = true,
+        },
+    },
+
+    dwindle = {
+        preserve_split = true,
+        smart_split    = false,
+        smart_resizing = true,
+    },
+})

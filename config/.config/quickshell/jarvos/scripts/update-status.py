@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import concurrent.futures
 import json
 import os
 import re
@@ -230,23 +231,139 @@ def uv_status():
     return group("uv", "uv", "speed", [label] + installed[:30], "info")
 
 
+def reboot_status():
+    reboot_required = False
+    reasons = []
+
+    rc, kernel, _ = run(["uname", "-r"], timeout=5)
+    if rc == 0 and kernel and not os.path.isdir(f"/usr/lib/modules/{kernel}"):
+        reboot_required = True
+        reasons.append(f"Módulos do kernel ({kernel}) foram removidos após atualização do pacote linux.")
+
+    for pkg in ["linux", "linux-lts", "linux-zen", "linux-hardened"]:
+        rc, out, _ = run(["pacman", "-Q", pkg], timeout=5)
+        if rc == 0 and out.strip():
+            parts = out.strip().split()
+            if len(parts) == 2:
+                pkg_ver = parts[1]
+                norm_pkg = pkg_ver.replace(".", "-").replace("_", "-")
+                norm_run = (kernel or "").replace(".", "-").replace("_", "-")
+                if norm_pkg != norm_run and not norm_run.startswith(norm_pkg):
+                    reboot_required = True
+                    reasons.append(f"Novo pacote de kernel instalado: {parts[0]} {pkg_ver} (em execução: {kernel}).")
+
+    for marker in ["/run/reboot-required", "/var/run/reboot-required"]:
+        if os.path.exists(marker):
+            reboot_required = True
+            reasons.append(f"Sinalizador {marker} presente.")
+
+    # NVIDIA driver half-applied: userspace updated while the running kernel
+    # still holds the old module. Every GPU client then dies with "NVRM: API
+    # mismatch" (hyprlock included), so flag the reboot before locking.
+    nvram = "/proc/driver/nvidia/version"
+    if os.path.exists(nvram):
+        try:
+            with open(nvram, encoding="utf-8", errors="ignore") as f:
+                text = f.read()
+            match = re.search(r"NVRM version:.*?([0-9]+\.[0-9]+\.[0-9]+)", text)
+            module_version = match.group(1) if match else ""
+            rc, out, _ = run(["pacman", "-Q", "nvidia-utils"], timeout=5)
+            parts = out.split()
+            userspace_version = parts[1].rsplit("-", 1)[0] if rc == 0 and len(parts) >= 2 else ""
+            if module_version and userspace_version and module_version != userspace_version:
+                reboot_required = True
+                reasons.append(
+                    f"Driver NVIDIA atualizado ({userspace_version}) mas o módulo em execução é "
+                    f"{module_version}; reinicie antes de trancar a tela."
+                )
+        except Exception:
+            pass
+
+    state_dir = os.environ.get("JARVOS_STATE", os.path.expanduser("~/.local/state/jarvos"))
+    if os.path.isdir(state_dir):
+        for f in os.listdir(state_dir):
+            if f.startswith("restart-") and f.endswith("-required"):
+                srv = f[len("restart-"):-len("-required")]
+                reboot_required = True
+                reasons.append(f"Serviço '{srv}' requer reinicialização.")
+
+    scheduled = False
+    scheduled_time = ""
+    scheduled_mode = ""
+    scheduled_msg = ""
+    scheduled_seconds_left = 0
+
+    sched_file = "/run/systemd/shutdown/scheduled"
+    if os.path.exists(sched_file):
+        try:
+            with open(sched_file, "r", encoding="utf-8") as f:
+                sched_data = {}
+                for line in f:
+                    if "=" in line:
+                        k, v = line.strip().split("=", 1)
+                        sched_data[k] = v
+                if "USEC" in sched_data:
+                    usec = int(sched_data["USEC"])
+                    target_epoch = usec / 1_000_000
+                    now_epoch = datetime.now().timestamp()
+                    seconds_left = max(0, int(target_epoch - now_epoch))
+                    dt = datetime.fromtimestamp(target_epoch)
+                    scheduled_time = dt.strftime("%H:%M:%S")
+                    scheduled_seconds_left = seconds_left
+                    scheduled = True
+                scheduled_mode = sched_data.get("MODE", "reboot")
+                raw_msg = sched_data.get("WALL_MESSAGE", "")
+                scheduled_msg = raw_msg.encode("utf-8").decode("unicode_escape", errors="ignore")
+        except Exception:
+            pass
+
+    return {
+        "required": reboot_required,
+        "reasons": reasons,
+        "scheduled": scheduled,
+        "scheduled_time": scheduled_time,
+        "scheduled_mode": scheduled_mode,
+        "scheduled_message": scheduled_msg,
+        "scheduled_seconds_left": scheduled_seconds_left,
+    }
+
+
 def main():
-    groups = [
-        pacman_updates(),
-        aur_updates(),
-        system_status(),
-        flutter_updates(),
-        dart_status(),
-        python_updates(),
-        rust_updates(),
-        bun_updates(),
-        npm_updates(),
-        uv_status(),
+    if "--reboot-only" in sys.argv:
+        print(json.dumps({"reboot": reboot_status()}, ensure_ascii=False))
+        return
+
+    check_funcs = [
+        pacman_updates,
+        aur_updates,
+        system_status,
+        flutter_updates,
+        dart_status,
+        python_updates,
+        rust_updates,
+        bun_updates,
+        npm_updates,
+        uv_status,
     ]
+
+    results = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(check_funcs)) as executor:
+        futures = {executor.submit(fn): fn for fn in check_funcs}
+        for future in concurrent.futures.as_completed(futures):
+            fn = futures[future]
+            try:
+                results[fn] = future.result()
+            except Exception as exc:
+                results[fn] = group(fn.__name__, fn.__name__, "error", [], "error", str(exc))
+
+    groups = [results[fn] for fn in check_funcs]
+    reboot = reboot_status()
+
     payload = {
         "generated_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
         "groups": groups,
         "total": sum(g["count"] for g in groups if g["status"] == "updates"),
+        "reboot": reboot,
     }
     print(json.dumps(payload, ensure_ascii=False))
 

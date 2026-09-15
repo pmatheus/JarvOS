@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+# jarvos-rescue — recover a wedged Hyprland session without rebooting.
+#
+# Run it from a TTY (Ctrl+Alt+F3) or over SSH (ssh user@<ip>) when the desktop
+# is black, frozen, or stuck on the lockscreen.  It reports health and applies
+# the least invasive recovery that fits.
+#
+#   jarvos-rescue                 health report + what it would do
+#   jarvos-rescue unlock          kill a wedged hyprlock and release the session lock
+#   jarvos-rescue shell           restart the JarvOS quickshell
+#   jarvos-rescue compositor      ask Hyprland to exit (SDDM restarts the session)
+#   jarvos-rescue session         terminate your login session (SDDM shows the greeter)
+#   jarvos-rescue gpu             reload the NVIDIA modules after a driver update
+#   jarvos-rescue help            this manual
+#
+# Destructive actions ask first; set JARVOS_RESCUE_YES=1 to skip the prompt.
+set -uo pipefail
+
+LOCK_WEDGED_SECONDS="${JARVOS_RESCUE_LOCK_SECONDS:-120}"
+
+say() { printf '%s\n' "$*"; }
+err() { printf '%s\n' "$*" >&2; }
+
+confirm() {
+    [[ "${JARVOS_RESCUE_YES:-0}" == "1" ]] && return 0
+    local reply
+    if ! read -r -p "$1 [y/N] " reply < /dev/tty 2>/dev/null; then
+        err "no tty to confirm on; re-run with JARVOS_RESCUE_YES=1"
+        return 1
+    fi
+    [[ "$reply" == "y" || "$reply" == "Y" ]]
+}
+
+sudo_do() {
+    if [[ "$(id -u)" -eq 0 ]]; then "$@"; else sudo "$@"; fi
+}
+
+hyprland_pid() { pgrep -x Hyprland | head -1; }
+hyprlock_pid() { pgrep -x hyprlock | head -1; }
+quickshell_up() { pgrep -f 'qs -p .*/quickshell/jarvos/shell.qml' >/dev/null 2>&1; }
+
+session_id() {
+    loginctl list-sessions --no-legend 2>/dev/null | awk -v u="$USER" '$3 == u {print $1; exit}'
+}
+
+lock_age() {
+    local pid
+    pid="$(hyprlock_pid)" || return 0
+    local etimes
+    etimes="$(ps -o etimes= -p "$pid" 2>/dev/null | tr -d ' ')"
+    printf '%s' "${etimes:-0}"
+}
+
+gpu_of() {
+    local modver userspace
+    modver="$(awk '/NVRM version/{print; exit}' /proc/driver/nvidia/version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+    userspace="$(pacman -Q nvidia-utils 2>/dev/null | awk '{print $2}' | sed -E 's/-[0-9]+$//')"
+    if [[ -z "$modver" ]]; then
+        say "gpu            no NVIDIA module loaded"
+    elif [[ "$modver" == "$userspace" ]]; then
+        say "gpu            ok (module $modver = userspace $userspace)"
+    else
+        say "gpu            MISMATCH (module $modver != userspace $userspace) — reboot or: jarvos-rescue gpu"
+    fi
+}
+
+status() {
+    local pid
+    if pid="$(hyprland_pid)"; then say "hyprland       running (pid $pid)"; else say "hyprland       NOT running"; fi
+
+    if pid="$(hyprlock_pid)"; then
+        local age; age="$(lock_age)"
+        say "hyprlock       running (pid $pid, ${age}s)"
+        [[ "${age:-0}" -ge "$LOCK_WEDGED_SECONDS" ]] && say "               WEDGED (> ${LOCK_WEDGED_SECONDS}s) — try: jarvos-rescue unlock"
+    else
+        say "hyprlock       not running"
+    fi
+
+    if quickshell_up; then say "quickshell     running"; else say "quickshell     dead — try: jarvos-rescue shell"; fi
+    gpu_of
+    say "kernel         $(uname -r)"
+    say "session        $(session_id)"
+
+    local reboot
+    if [[ -x "$HOME/.config/quickshell/jarvos/scripts/update-status.py" ]]; then
+        reboot="$(timeout 20 python3 "$HOME/.config/quickshell/jarvos/scripts/update-status.py" --reboot-only 2>/dev/null \
+            | python3 -c 'import json,sys;d=json.load(sys.stdin).get("reboot",{});print("required" if d.get("required") else "no")' 2>/dev/null)"
+        say "reboot         ${reboot:-unknown} (after a kernel/driver update, reboot before locking)"
+    fi
+}
+
+cmd_unlock() {
+    local pid age
+    pid="$(hyprlock_pid)"
+    if [[ -n "$pid" ]]; then
+        age="$(lock_age)"
+        if ! confirm "kill hyprlock (pid $pid, ${age}s) and release the lock?"; then return 1; fi
+        kill -TERM "$pid" 2>/dev/null || true
+        sleep 2
+        if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid" 2>/dev/null || true; sleep 1; fi
+        say "hyprlock stopped"
+    else
+        say "hyprlock not running"
+    fi
+    local sid; sid="$(session_id)"
+    if [[ -n "$sid" ]]; then
+        if loginctl unlock-session "$sid" 2>/dev/null; then
+            say "released session lock on session $sid"
+        else
+            say "loginctl unlock-session failed (may need a TTY/root)"
+        fi
+    fi
+}
+
+cmd_shell() {
+    if systemctl --user restart quickshell-jarvos.service; then
+        say "quickshell restarted"
+    else
+        err "failed to restart quickshell-jarvos.service"
+    fi
+}
+
+cmd_compositor() {
+    if ! confirm "ask Hyprland to exit now? SDDM will start a fresh session (unsaved work is lost)."; then return 1; fi
+    if command -v hyprctl >/dev/null 2>&1 && hyprctl version >/dev/null 2>&1; then
+        hyprctl dispatch exit 2>/dev/null || true
+        say "Hyprland exit requested"
+    else
+        err "hyprctl unavailable (compositor not answering) — falling back to SDDM restart"
+        sudo_do systemctl restart sddm && say "sddm restarted"
+    fi
+}
+
+cmd_session() {
+    local sid; sid="$(session_id)"
+    if [[ -z "$sid" ]]; then err "no login session for $USER"; return 1; fi
+    if ! confirm "terminate session $sid? Everything in it closes; SDDM returns."; then return 1; fi
+    loginctl terminate-session "$sid" && say "session $sid terminated"
+}
+
+cmd_gpu() {
+    local gpu_ok
+    gpu_ok="$(dirname "$(realpath "$0")")/jarvos-gpu-ok"
+    [[ -x "$gpu_ok" ]] || gpu_ok="$(command -v jarvos-gpu-ok 2>/dev/null || true)"
+    [[ -n "$gpu_ok" ]] || { err "jarvos-gpu-ok not found"; return 1; }
+    if "$gpu_ok"; then say "GPU stack consistent — nothing to reload"; return 0; fi
+    if ! confirm "stop SDDM, unload and reload the NVIDIA modules, then start SDDM?"; then return 1; fi
+    sudo_do systemctl stop sddm || { err "failed to stop sddm"; return 1; }
+    sleep 1
+    sudo_do modprobe -r nvidia_drm nvidia_modeset nvidia_uvm nvidia 2>/dev/null || true
+    if ! sudo_do modprobe nvidia; then
+        err "modprobe nvidia failed — the running kernel has no matching module; reboot."
+        sudo_do systemctl start sddm
+        return 1
+    fi
+    sudo_do systemctl start sddm || true
+    sleep 2
+    if "$gpu_ok"; then
+        say "NVIDIA modules reloaded and consistent; SDDM restarted"
+    else
+        err "still mismatched — reboot is required"
+        return 1
+    fi
+}
+
+cmd_help() {
+    sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+case "${1:-status}" in
+    status) status ;;
+    unlock) cmd_unlock ;;
+    shell) cmd_shell ;;
+    compositor) cmd_compositor ;;
+    session) cmd_session ;;
+    gpu) cmd_gpu ;;
+    help|-h|--help) cmd_help ;;
+    *)
+        err "unknown command: $1"
+        cmd_help
+        exit 2
+        ;;
+esac

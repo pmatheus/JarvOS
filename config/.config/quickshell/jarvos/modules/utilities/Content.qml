@@ -28,11 +28,6 @@ Item {
             z: 1
         }
 
-        Updates {
-            props: root.props
-            visibilities: root.visibilities
-        }
-
         Toggles {
             visibilities: root.visibilities
             popouts: root.popouts

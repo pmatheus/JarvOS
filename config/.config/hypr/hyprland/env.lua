@@ -1,0 +1,29 @@
+-- ######### Input method ##########
+-- See https://fcitx-im.org/wiki/Using_Fcitx_5_on_Wayland
+hl.env("QT_IM_MODULE", "fcitx")
+hl.env("XMODIFIERS", "@im=fcitx")
+-- hl.env("GTK_IM_MODULE", "wayland")  -- Crashes electron apps in xwayland
+-- hl.env("GTK_IM_MODULE", "fcitx")    -- My Gtk apps no longer require this to work with fcitx5 hmm
+hl.env("SDL_IM_MODULE", "fcitx")
+hl.env("GLFW_IM_MODULE", "ibus")
+hl.env("INPUT_METHOD", "fcitx")
+
+-- ############ Themes #############
+hl.env("QT_QPA_PLATFORM", "wayland")
+hl.env("QT_QPA_PLATFORMTHEME", "gtk3")
+
+-- ######## Qt logging suppression #########
+-- Quickshell.Widgets library internals (Wrapper*/Clipping* property cache),
+-- bluez DBus when no BT adapter, and Qt+xdg-portal duplicate registration race.
+-- All are harmless upstream-library noise; the shell behaviour is unaffected.
+hl.env("QT_LOGGING_RULES",
+    "qt.qml.propertyCache.append.warning=false;quickshell.dbus.objectmanager.warning=false;qt.qpa.services.warning=false")
+-- hl.env("QT_STYLE_OVERRIDE", "kvantum")
+-- hl.env("WLR_NO_HARDWARE_CURSORS", "1")
+
+-- ######## Screen tearing #########
+-- hl.env("WLR_DRM_NO_ATOMIC", "1")
+hl.env("ELECTRON_OZONE_PLATFORM_HINT", "auto")
+
+-- ######## Virtual environment #########
+hl.env("ILLOGICAL_IMPULSE_VIRTUAL_ENV", "~/.local/state/quickshell/.venv")

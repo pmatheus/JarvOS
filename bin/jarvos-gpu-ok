@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# jarvos-gpu-ok — exit 0 when the loaded NVIDIA kernel module matches the
+# installed userspace driver. Exit 1 (with a reason on stderr) otherwise.
+#
+# Why this matters: an update can replace the userspace driver (libnvidia,
+# nvidia-utils) while the running kernel still holds the previous module. Every
+# new GPU client then dies with "NVRM: API mismatch" — hyprlock and the
+# quickshell Vulkan contexts included, which black-screens the session. Callers
+# that start a GPU client (lock.sh, launchers) should gate on this.
+#
+# Exits 0 when no NVIDIA module is loaded (nothing to compare).
+set -uo pipefail
+
+version_file=/proc/driver/nvidia/version
+[[ -r "$version_file" ]] || exit 0
+
+module_version="$(awk '/NVRM version/{print; exit}' "$version_file" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+[[ -n "$module_version" ]] || exit 0
+
+userspace_pkg="$(pacman -Qq nvidia-utils 2>/dev/null || true)"
+[[ -n "$userspace_pkg" ]] || exit 0
+
+userspace_version="$(pacman -Q "$userspace_pkg" 2>/dev/null | awk '{print $2}' | sed -E 's/-[0-9]+$//')"
+[[ -n "$userspace_version" ]] || exit 0
+
+if [[ "$module_version" == "$userspace_version" ]]; then
+    exit 0
+fi
+
+printf 'NVIDIA API mismatch: kernel module %s != userspace %s. Complete the update and reboot before starting GPU apps.\n' \
+    "$module_version" "$userspace_version" >&2
+exit 1
