@@ -39,3 +39,8 @@ secrets*.json
 **/.secrets/
 .superpowers/
 .playwright-cli/
+
+# Agent instruction files stay local
+CLAUDE.md
+AGENTS.md
+GEMINI.md
