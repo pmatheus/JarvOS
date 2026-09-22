@@ -44,3 +44,8 @@ secrets*.json
 CLAUDE.md
 AGENTS.md
 GEMINI.md
+.claude/
+.gemini/
+.agents/
+.codex/
+.opencode/
