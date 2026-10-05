@@ -1,10 +1,26 @@
 #!/usr/bin/env bash
-# jarvos-update-git — bring the runtime checkout up to date.
+# jarvos-update-git — bring the runtime checkout up to date, whatever shape
+# its disagreement with upstream takes.
 #
-# Runs BEFORE any package work, so a merge conflict aborts the update before
-# a single system mutation. Hyprland watches its config files and will spew
-# errors as they change underneath it, so it is muted across the pull and
-# reloaded once, explicitly, afterwards.
+# Runs BEFORE any package work. Every path out of here leaves a tree that is
+# wholly one release: never half-merged, never with conflict markers in it.
+#
+#   up to date or ahead    nothing to do
+#   behind                 fast-forward, local edits autostashed
+#   diverged               local commits rebased onto upstream; a conflict
+#                          aborts the rebase and leaves the checkout as it was
+#   upstream rewritten     no common ancestor at all (a history filter, a
+#                          force-push). Upstream wins, and nothing local is
+#                          lost: the old history is kept on a
+#                          jarvos/backup/<stamp> branch, uncommitted edits
+#                          are carried over through a stash, and files the
+#                          rewrite stopped tracking and now ignores are put
+#                          back on disk as the local files they became
+#   unreachable            exit 75; the network, not the checkout
+#
+# Hyprland watches its config files and will spew errors as they change
+# underneath it, so it is muted across the change and reloaded once,
+# explicitly, afterwards.
 #
 # Seams: JARVOS_HYPRCTL
 
@@ -17,26 +33,92 @@ unset _lib
 
 HYPRCTL="${JARVOS_HYPRCTL:-hyprctl}"
 
-git -C "$JARVOS_PATH" rev-parse --git-dir >/dev/null 2>&1 || {
+repo() { git -C "$JARVOS_PATH" "$@"; }
+
+repo rev-parse --git-dir >/dev/null 2>&1 || {
     echo "jarvos-update-git: $JARVOS_PATH is not a checkout — nothing to pull"
     exit 0
 }
 
+upstream="$(repo rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)" || {
+    echo "jarvos-update-git: the current branch tracks no upstream — nothing to pull"
+    exit 0
+}
+remote="${upstream%%/*}"
+
 echo "Updating the JarvOS checkout"
 
-command -v "$HYPRCTL" >/dev/null 2>&1 && "$HYPRCTL" keyword misc:disable_autoreload 1 >/dev/null 2>&1 || true
-
-pull_status=0
-git -C "$JARVOS_PATH" pull --autostash --ff-only || pull_status=$?
-
-# A conflicted tree must be abandoned rather than shipped: half of one
-# release and half of another is a machine nobody can reason about.
-if ! git -C "$JARVOS_PATH" diff --check >/dev/null 2>&1; then
-    git -C "$JARVOS_PATH" reset --merge >/dev/null 2>&1 || true
-    pull_status=1
+if ! repo fetch --quiet "$remote"; then
+    echo "jarvos-update-git: could not reach $remote — retry later" >&2
+    exit "$JARVOS_EX_TEMPFAIL"
 fi
 
-command -v "$HYPRCTL" >/dev/null 2>&1 && "$HYPRCTL" keyword misc:disable_autoreload 0 >/dev/null 2>&1 || true
-command -v "$HYPRCTL" >/dev/null 2>&1 && "$HYPRCTL" reload >/dev/null 2>&1 || true
+if repo merge-base --is-ancestor '@{u}' HEAD; then
+    echo "  already up to date"
+    exit 0
+fi
 
-exit "$pull_status"
+hypr() { command -v "$HYPRCTL" >/dev/null 2>&1 && "$HYPRCTL" "$@" >/dev/null 2>&1 || true; }
+
+dirty() { [[ -n "$(repo status --porcelain --untracked-files=no)" ]]; }
+
+adopt_rewritten() {
+    local backup stashed=0 path
+    backup="jarvos/backup/$(date +%Y%m%d-%H%M%S)"
+    repo branch "$backup" HEAD
+    echo "  $upstream was rewritten; the previous history is kept on branch $backup"
+
+    if dirty; then
+        repo stash push --quiet -m "jarvos-update: local edits before adopting rewritten $upstream"
+        stashed=1
+    fi
+
+    repo reset --quiet --hard '@{u}'
+
+    # What the rewrite dropped from history but now ignores is what upstream
+    # decided should be local. It was on disk a moment ago; keep it there.
+    while IFS= read -r path; do
+        [[ -n "$path" ]] || continue
+        repo check-ignore -q --no-index -- "$path" || continue
+        mkdir -p "$JARVOS_PATH/$(dirname "$path")"
+        repo show "$backup:$path" >"$JARVOS_PATH/$path"
+        echo "  kept $path as a local, ignored file"
+    done < <(repo diff --name-only --diff-filter=D "$backup" '@{u}')
+
+    if ((stashed)) && ! repo stash pop --quiet; then
+        # A failed pop keeps the stash entry; only the markers go.
+        repo reset --quiet --hard '@{u}'
+        echo "jarvos-update-git: local edits conflict with the new $upstream — kept in 'git stash list'" >&2
+        return 1
+    fi
+}
+
+hypr keyword misc:disable_autoreload 1
+
+status=0
+if ! repo merge-base HEAD '@{u}' >/dev/null 2>&1; then
+    adopt_rewritten || status=$?
+elif repo merge-base --is-ancestor HEAD '@{u}'; then
+    repo merge --quiet --ff-only --autostash '@{u}' || status=$?
+else
+    if ! repo rebase --quiet --autostash '@{u}'; then
+        repo rebase --abort >/dev/null 2>&1 || true
+        echo "jarvos-update-git: local commits conflict with $upstream — left as they were" >&2
+        status=1
+    fi
+fi
+
+# A conflicted tree must be abandoned rather than shipped: half of one
+# release and half of another is a machine nobody can reason about. An
+# autostash that could not be re-applied ends up here too, and its edits stay
+# in the stash list.
+if [[ -n "$(repo diff --name-only --diff-filter=U)" ]]; then
+    repo reset --quiet --merge || true
+    echo "jarvos-update-git: conflicting local edits were set aside in 'git stash list'" >&2
+    status=1
+fi
+
+hypr keyword misc:disable_autoreload 0
+hypr reload
+
+exit "$status"

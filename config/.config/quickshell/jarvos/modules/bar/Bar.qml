@@ -169,6 +169,20 @@ RowLayout {
             DelegateChoice {
                 roleValue: "updates"
                 delegate: WrappedLoader {
+                    // Hidden on the Loader rather than inside Updates: an
+                    // invisible item still lends the Loader its implicit size,
+                    // which would leave a gap in the row.
+                    visible: enabled && UpdateStatus.needsAttention
+                    active: visible
+
+                    // A refresh that lands on zero while the panel is open
+                    // would otherwise strand it over a widget that no longer
+                    // exists.
+                    onVisibleChanged: {
+                        if (!visible && root.popouts.currentName === "updates")
+                            root.popouts.hasCurrent = false;
+                    }
+
                     sourceComponent: Updates {
                         bar: root
                     }

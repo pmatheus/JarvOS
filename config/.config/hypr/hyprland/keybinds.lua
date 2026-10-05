@@ -96,9 +96,9 @@ kb.page("")
 kb.section("Window")
 
 -- Mouse
-kb.bind({ mods = { "Super" }, key = "mouse:272", hidden = true, opts = { drag = true }, dispatch = hl.dsp.window.drag() })
-kb.bind({ mods = { "Super" }, key = "mouse:274", hidden = true, opts = { drag = true }, dispatch = hl.dsp.window.drag() })
-kb.bind({ mods = { "Super" }, key = "mouse:273", hidden = true, opts = { drag = true }, dispatch = hl.dsp.window.resize() })
+kb.bind({ mods = { "Super" }, key = "mouse:272", hidden = true, opts = { mouse = true }, dispatch = hl.dsp.window.drag() })
+kb.bind({ mods = { "Super" }, key = "mouse:274", hidden = true, opts = { mouse = true }, dispatch = hl.dsp.window.drag() })
+kb.bind({ mods = { "Super" }, key = "mouse:273", hidden = true, opts = { mouse = true }, dispatch = hl.dsp.window.resize() })
 
 kb.bind({ mods = { "Super" }, key = "Q",  desc = "Close",  dispatch = hl.dsp.window.close() })
 kb.bind({ mods = { "Alt" },   key = "F4", hidden = true,   dispatch = hl.dsp.window.close() })
@@ -200,6 +200,6 @@ kb.bind({ mods = { "Super", "Alt" }, key = "C", desc = "Chinese Learning Scratch
 kb.bind({ mods = { "Super" }, key = "M", desc = "Spotify",
           dispatch = exec("pgrep spotify && hyprctl dispatch togglespecialworkspace spotify || spotify --enable-features=UseOzonePlatform --ozone-platform=wayland") })
 kb.bind({ mods = { "Super" }, key = "Z", desc = "Ferdium",
-          dispatch = exec("pgrep -f ferdium && hyprctl dispatch togglespecialworkspace ferdium || ferdium --enable-features=UseOzonePlatform --ozone-platform=wayland") })
+          dispatch = exec("if hyprctl clients -j | jq -e '.[] | select(.class == \"ferdium\")' >/dev/null; then hyprctl eval 'hl.dispatch(hl.dsp.workspace.toggle_special(\"ferdium\"))'; else ferdium --enable-features=UseOzonePlatform --ozone-platform=wayland; fi") })
 
 return { kb = kb, util = util, exec = exec, shell = shell, first_available = first_available, SCRIPTS = SCRIPTS }

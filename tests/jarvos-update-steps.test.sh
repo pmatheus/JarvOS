@@ -8,49 +8,11 @@ source "$(cd "$(dirname "$0")" && pwd)/lib/sandbox.sh"
 make_sandbox
 trap clean_sandbox EXIT
 
-# Take over git for this suite: every case here asserts on what the step
-# asked git to do, and none of them wants a real repository.
-: >"$FAKE_STATE/git-shim"
-
 reset_calls() {
-    : >"$FAKE_STATE/git-calls"
-    : >"$FAKE_STATE/hyprctl-calls"
     : >"$FAKE_STATE/pacman-installed"
-    rm -f "$FAKE_STATE/git-pull-fails" "$FAKE_STATE/git-pull-conflicts"
 }
 
-# --- jarvos-update-git ---------------------------------------------------
-
-reset_calls
-start_test "the pull autostashes, so local edits do not block it"
-run_cmd jarvos-update-git
-assert_status "$RUN_STATUS" 0 &&
-    assert_contains "$FAKE_STATE/git-calls" "--autostash" &&
-    pass_test
-
-start_test "Hyprland is reloaded once, after the pull"
-# -x, not a substring match: 'disable_autoreload' also contains 'reload'.
-if [[ "$(grep -cx 'reload' "$FAKE_STATE/hyprctl-calls")" -eq 1 ]]; then
-    assert_contains "$FAKE_STATE/hyprctl-calls" "disable_autoreload 0" && pass_test
-else
-    fail_test "expected exactly one bare reload"
-fi
-
-reset_calls
-start_test "a network failure fails the step readably"
-: >"$FAKE_STATE/git-pull-fails"
-run_cmd jarvos-update-git
-{ [[ "$RUN_STATUS" -ne 0 ]] || fail_test "expected non-zero, got 0"; } &&
-    assert_stdout_contains "$RUN_OUT" "could not" &&
-    pass_test
-
-reset_calls
-start_test "a conflicted tree is abandoned, not shipped"
-: >"$FAKE_STATE/git-pull-conflicts"
-run_cmd jarvos-update-git
-{ [[ "$RUN_STATUS" -ne 0 ]] || fail_test "expected non-zero, got 0"; } &&
-    assert_contains "$FAKE_STATE/git-calls" "reset --merge" &&
-    pass_test
+# jarvos-update-git runs against real repositories in jarvos-update-git.test.sh.
 
 # --- jarvos-update-keyring ----------------------------------------------
 
@@ -81,6 +43,36 @@ chmod +x "$FAKE_BIN/yay"
 run_cmd jarvos-update-aur-pkgs
 assert_status "$RUN_STATUS" 0 &&
     assert_stdout_contains "$RUN_OUT" "AUR" &&
+    pass_test
+
+start_test "and it leaves the marker jarvos-update reads to fail the run"
+assert_file_exists "$FAKE_HOME/.local/state/jarvos/aur-update-failed" && pass_test
+
+start_test "a successful AUR pass clears a marker left by an earlier failure"
+cat >"$FAKE_BIN/yay" <<'YAY'
+#!/usr/bin/env bash
+exit 0
+YAY
+chmod +x "$FAKE_BIN/yay"
+run_cmd jarvos-update-aur-pkgs
+assert_status "$RUN_STATUS" 0 &&
+    assert_no_file "$FAKE_HOME/.local/state/jarvos/aur-update-failed" &&
+    pass_test
+
+start_test "a build stopped by an unknown PGP key fetches the key and retries"
+# shellcheck disable=SC2016  # expanded by the stub, not here
+printf '%s\n' '#!/usr/bin/env bash' \
+    'n=$(cat "$FAKE_STATE/yay-runs" 2>/dev/null || echo 0); echo $((n + 1)) > "$FAKE_STATE/yay-runs"' \
+    '[[ $n -gt 0 ]] && exit 0' \
+    'echo "foo-1.0.tar.gz ... FAILED (unknown public key 1A2B3C4D5E6F7A8B)" >&2; exit 1' \
+    >"$FAKE_BIN/yay"
+# shellcheck disable=SC2016
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "$FAKE_STATE/gpg-calls"\n' >"$FAKE_BIN/gpg"
+chmod +x "$FAKE_BIN/yay" "$FAKE_BIN/gpg"
+run_cmd jarvos-update-aur-pkgs
+assert_status "$RUN_STATUS" 0 &&
+    assert_contains "$FAKE_STATE/gpg-calls" "--recv-keys 1A2B3C4D5E6F7A8B" &&
+    assert_no_file "$FAKE_HOME/.local/state/jarvos/aur-update-failed" &&
     pass_test
 
 # --- jarvos-update-orphan-pkgs ------------------------------------------

@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# jarvos-update-rollback <pre-snapshot> — put the system back the way that
+# snapshot found it, live, and prove it.
+#
+# The root snapshot on this layout covers the whole filesystem, /home
+# included, so restoring everything would also roll back every file the user
+# wrote during the update. Only the paths a package transaction owns are
+# restored: SYSTEM_PATHS below.
+#
+# Files go back the way pacman installs them: a copy beside the target, then an
+# atomic rename over it. Overwriting a shared library in place would crash
+# every process that has it mapped, and during a live rollback that is all of
+# them.
+#
+# Compared against snapshot 0, the live system, not against a post snapshot: a
+# post snapshot is taken anyway, for the post-mortem, but what has to match
+# the "before" is the system as it is right now.
+#
+# Proved, not assumed: the package list afterwards must equal the one
+# jarvos-update recorded before it began.
+#
+# Seams: JARVOS_SNAPSHOTS (/.snapshots), JARVOS_SYSROOT (a path prefix),
+#        JARVOS_SNAPPER_CONFIG (root), JARVOS_UPDATE_RUN_DIR
+
+set -euo pipefail
+
+# shellcheck source=lib/jarvos-common.sh
+_lib="$(dirname "$(realpath "$0")")/../lib/jarvos-common.sh"
+if [[ -r "$_lib" ]]; then source "$_lib"; else source /usr/share/jarvos/lib/jarvos-common.sh; fi
+unset _lib
+
+PRE="${1-}"
+[[ "$PRE" =~ ^[0-9]+$ ]] || die "usage: jarvos-update-rollback <pre-snapshot-number>"
+
+SNAPSHOTS="${JARVOS_SNAPSHOTS:-/.snapshots}"
+SYSROOT="${JARVOS_SYSROOT:-}"
+CONFIG="${JARVOS_SNAPPER_CONFIG:-root}"
+RUN_DIR="${JARVOS_UPDATE_RUN_DIR:-$JARVOS_STATE/update-run}"
+SYSTEM_PATHS='^/(usr|etc|boot|opt|var/lib/pacman|var/lib/dkms)(/|$)'
+
+# Every file operation below needs root; the snapper and pacman calls get it
+# through sudo on their own.
+as_root() {
+    if [[ "$(id -u)" -eq 0 ]]; then "$@"; else sudo "$@"; fi
+}
+
+snap="$SNAPSHOTS/$PRE/snapshot"
+as_root test -d "$snap" || die "snapshot $PRE has no tree at $snap"
+
+echo "Rolling the system back to snapshot $PRE"
+
+post="$(sudo snapper -c "$CONFIG" create --type post --pre-number "$PRE" --print-number \
+    --description "jarvos-update: state that failed" 2>/dev/null || true)"
+[[ -n "$post" ]] && echo "  the failed state is kept as snapshot $post"
+
+changes="$(mktemp)"
+trap 'rm -f "$changes"' EXIT
+# The redirect is ours on purpose: the list lands in a file we own.
+# shellcheck disable=SC2024
+sudo snapper -c "$CONFIG" status "$PRE..0" >"$changes"
+
+# "XXXXXX /path": six status columns, a space, then the path, spaces and all.
+select_changes() {
+    # select_changes <status-char-regex> — system paths with that status
+    cut -c1,8- "$changes" | grep -E "^$1" | cut -c2- | grep -E "$SYSTEM_PATHS" || true
+}
+
+# Atomic put-back of one file or symlink: copy beside it, rename over it.
+restore_file() {
+    local rel="$1" src="$snap$1" dst="$SYSROOT$1" tmp
+    tmp="$(dirname "$dst")/.jarvos-rollback.$$.$(basename "$dst")"
+    as_root mkdir -p "$(dirname "$dst")"
+    if as_root test -d "$dst" -a ! -L "$dst"; then
+        as_root rm -rf "$dst"
+    fi
+    as_root cp -a --reflink=auto "$src" "$tmp"
+    as_root mv -fT "$tmp" "$dst"
+}
+
+restore() {
+    local rel="$1" src="$snap$1" dst="$SYSROOT$1"
+    if as_root test -d "$src" -a ! -L "$src"; then
+        as_root mkdir -p "$dst"
+        as_root chmod --reference="$src" "$dst"
+        as_root chown --reference="$src" "$dst"
+    else
+        restore_file "$rel"
+    fi
+}
+
+restored=0 removed=0
+
+# Created by the update: deepest first, so a directory is empty by the time
+# its turn comes.
+while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    dst="$SYSROOT$rel"
+    if as_root test -d "$dst" -a ! -L "$dst"; then
+        as_root rmdir "$dst" 2>/dev/null || as_root rm -rf "$dst"
+    else
+        as_root rm -f "$dst"
+    fi
+    removed=$((removed + 1))
+done < <(select_changes '\+' | awk '{ print length, $0 }' | sort -rn | cut -d' ' -f2-)
+
+# Deleted or changed by the update: shallowest first, so a parent exists
+# before anything is put inside it.
+while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    restore "$rel"
+    restored=$((restored + 1))
+done < <(select_changes '[-ct.]' | awk '{ print length, $0 }' | sort -n | cut -d' ' -f2-)
+
+echo "  $restored path(s) restored, $removed removed"
+
+before="$RUN_DIR/packages-before"
+if [[ ! -s "$before" ]]; then
+    echo "jarvos: no package list from before the update — cannot verify the rollback" >&2
+    exit 1
+fi
+
+if ! mismatch="$(diff <(sort "$before") <(pacman -Q 2>/dev/null | sort))"; then
+    echo "jarvos: after the rollback the installed packages still differ:" >&2
+    printf '%s\n' "$mismatch" | grep '^[<>]' | head -20 >&2
+    exit 1
+fi
+
+echo "  verified: the installed packages match the ones from before the update"

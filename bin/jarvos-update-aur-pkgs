@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 # jarvos-update-aur-pkgs — third-party packages, last and non-fatal.
 #
-# Runs after everything else and never fails the update. An AUR package is
-# somebody else's build script; a broken one must not take down a system
-# that is otherwise correctly updated.
+# Runs after everything else and never aborts the pipeline. An AUR package is
+# somebody else's build script; a broken one must not take down a system that
+# is otherwise correctly updated.
+#
+# Non-fatal is not the same as invisible. The failure is recorded in a marker
+# that jarvos-update reads at the very end, so the run still reports failure
+# and the shell's update panel stops showing success over an empty upgrade.
+#
+# One rule, for the failure an unattended run hits most: a source signed by a
+# key not in the user's keyring. The key is fetched and the build retried.
 
 set -uo pipefail
 
@@ -14,8 +21,28 @@ unset _lib
 
 command -v yay >/dev/null 2>&1 || exit 0
 
-echo "Updating AUR packages"
-yay -Sua --noconfirm ||
-    echo "jarvos: some AUR packages failed to build — the system update itself is fine" >&2
+log="$(mktemp)"
+trap 'rm -f "$log"' EXIT
 
+upgrade() {
+    local rc=0
+    yay -Sua --noconfirm 2>&1 | tee "$log" || rc=${PIPESTATUS[0]}
+    return "$rc"
+}
+
+jarvos-state clear aur-update-failed
+
+echo "Updating AUR packages"
+upgrade && exit 0
+
+keys="$(grep -oE 'unknown public key [0-9A-Fa-f]{8,40}' "$log" | awk '{print $4}' | sort -u)"
+if [[ -n "$keys" ]]; then
+    echo "jarvos: fetching the PGP key(s) the AUR sources are signed with"
+    # shellcheck disable=SC2086  # one key per word
+    gpg --recv-keys $keys || true
+    upgrade && exit 0
+fi
+
+jarvos-state set aur-update-failed
+echo "jarvos: AUR packages were NOT upgraded — the system update itself is fine" >&2
 exit 0

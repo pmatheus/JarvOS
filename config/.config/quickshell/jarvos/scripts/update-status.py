@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import sys
+import sysconfig
 from datetime import datetime, timezone
 
 
@@ -104,14 +105,11 @@ def aur_updates():
 def system_status():
     items = []
 
-    rc, out, _ = run(["systemctl", "is-enabled", "sysupdate.timer"], timeout=5)
-    items.append(f"sysupdate.timer: {'enabled' if rc == 0 and out == 'enabled' else 'disabled'}")
-
-    rc, out, _ = run(["systemctl", "--user", "is-enabled", "system-update.timer"], timeout=5)
-    items.append(f"user system-update.timer: {'enabled' if rc == 0 and out == 'enabled' else 'disabled'}")
-
-    rc, out, _ = run(["systemctl", "--user", "is-enabled", "system-updater.service"], timeout=5)
-    items.append(f"user system-updater.service: {'enabled' if rc == 0 and out == 'enabled' else 'disabled'}")
+    auto = auto_status()
+    items.append(
+        f"atualização automática: {'ativa' if auto['enabled'] else 'DESATIVADA'}"
+        + (f", próxima {auto['next']}" if auto["next"] else "")
+    )
 
     rc, kernel, _ = run(["uname", "-r"], timeout=5)
     if rc == 0 and kernel and not os.path.isdir(f"/usr/lib/modules/{kernel}"):
@@ -143,7 +141,11 @@ def flutter_updates():
     found = lines(out)
     if rc == 0:
         if any("available" in line.lower() or "upgrade" in line.lower() for line in found):
-            return group("flutter", "Flutter", "flutter", found[-12:], "updates")
+            # One SDK, one update: the notice is several lines long, and counting
+            # them inflated the badge.
+            g = group("flutter", "Flutter", "flutter", found[-12:], "updates")
+            g["count"] = 1
+            return g
         return group("flutter", "Flutter", "flutter", [], "ok")
     return group("flutter", "Flutter", "flutter", [], "error", err or out)
 
@@ -173,6 +175,14 @@ def python_updates():
     except json.JSONDecodeError:
         return group("python", "Python/pip", "python", lines(out), "updates" if out else "ok")
     found = [f"{p['name']} {p['version']} -> {p['latest_version']}" for p in data]
+
+    # On an EXTERNALLY-MANAGED interpreter every one of these is a pacman
+    # package, so pip neither may nor should upgrade them and the badge would
+    # count them forever. They are worth showing, never worth counting.
+    if os.path.exists(os.path.join(sysconfig.get_path("stdlib"), "EXTERNALLY-MANAGED")):
+        label = f"{len(found)} atrás do PyPI; interpretador EXTERNALLY-MANAGED, o pacman atualiza estes"
+        return group("python", "Python/pip", "python", [label] + found, "info")
+
     return group("python", "Python/pip", "python", found, "updates" if found else "ok")
 
 
@@ -229,6 +239,47 @@ def uv_status():
     installed = lines(out)
     label = f"{len(installed)} uv tool(s); uv exposes upgrade, not a read-only outdated check"
     return group("uv", "uv", "speed", [label] + installed[:30], "info")
+
+
+def state_dir():
+    return os.path.join(os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state")), "jarvos")
+
+
+def read_report(name):
+    try:
+        with open(os.path.join(state_dir(), "reports", name), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def auto_status():
+    """The daily timer, and how the last update of any kind ended."""
+    rc, out, _ = run(["systemctl", "--user", "is-enabled", "jarvos-update.timer"], timeout=5)
+    enabled = rc == 0 and out == "enabled"
+
+    nxt = ""
+    rc, out, _ = run(
+        ["systemctl", "--user", "show", "jarvos-update.timer", "-p", "NextElapseUSecRealtime", "--value"],
+        timeout=5,
+    )
+    if rc == 0 and out and out != "n/a":
+        nxt = out
+
+    rc, out, _ = run(["systemctl", "--user", "is-active", "jarvos-update.service"], timeout=5)
+    running = out in ("active", "activating")
+
+    last = read_report("last-update.json")
+    return {
+        "enabled": enabled,
+        "next": nxt,
+        "running": running,
+        "last_outcome": last.get("outcome", ""),
+        "last_finished": last.get("finished", ""),
+        "last_problems": last.get("problems", []),
+        "last_automatic": bool(last.get("automatic", False)),
+        "last_snapshot": last.get("snapshot", ""),
+    }
 
 
 def reboot_status():
@@ -364,6 +415,7 @@ def main():
         "groups": groups,
         "total": sum(g["count"] for g in groups if g["status"] == "updates"),
         "reboot": reboot,
+        "auto": auto_status(),
     }
     print(json.dumps(payload, ensure_ascii=False))
 

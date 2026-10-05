@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# jarvos-update-health — will this machine still boot after the transaction?
+#
+# The gate between installing packages and keeping them. A failure here makes
+# jarvos-update repair or roll back, so every check is something that, when
+# broken, really does leave the next boot dead, and nothing here checks the
+# merely untidy:
+#
+#   package database   pacman -Dk: no missing dependency, no conflict
+#   kernels            each installed kernel has its modules indexed and, under
+#                      mkinitcpio, its vmlinuz and initramfs in /boot. The
+#                      initramfs is what a failed hook silently does not write.
+#   NVIDIA             a DKMS driver built for every installed kernel, or the
+#                      next boot comes up without a display
+#
+# A kernel is "installed" when a package owns its pkgbase file. A removed
+# kernel leaves its modules directory behind when DKMS built into it, and that
+# leftover must not fail the gate.
+#
+# Seams: JARVOS_SYSROOT (a path prefix; empty means /)
+
+set -uo pipefail
+
+# shellcheck source=lib/jarvos-common.sh
+_lib="$(dirname "$(realpath "$0")")/../lib/jarvos-common.sh"
+if [[ -r "$_lib" ]]; then source "$_lib"; else source /usr/share/jarvos/lib/jarvos-common.sh; fi
+unset _lib
+
+SYSROOT="${JARVOS_SYSROOT:-}"
+problems=0
+
+problem() {
+    echo "  BROKEN  $*"
+    problems=$((problems + 1))
+}
+
+echo "Checking that the system will boot"
+
+if ! dk="$(pacman -Dk 2>&1)"; then
+    problem "package database: $dk"
+fi
+
+installed="$(pacman -Qq 2>/dev/null)"
+has() { grep -qxE "$1" <<<"$installed"; }
+
+nvidia_dkms=0
+has 'nvidia(-open)?-dkms|nvidia(-open)?(-lts)?' && nvidia_dkms=1
+
+kernels=0
+for pkgbase_file in "$SYSROOT"/usr/lib/modules/*/pkgbase; do
+    [[ -e "$pkgbase_file" ]] || continue
+    dir="${pkgbase_file%/pkgbase}"
+    kver="${dir##*/}"
+    pacman -Qo "/usr/lib/modules/$kver/pkgbase" >/dev/null 2>&1 || continue
+    kernels=$((kernels + 1))
+    pkgbase="$(<"$pkgbase_file")"
+
+    [[ -s "$dir/modules.dep" ]] || problem "kernel $kver: modules.dep is missing (depmod did not run)"
+
+    if has mkinitcpio; then
+        [[ -s "$SYSROOT/boot/vmlinuz-$pkgbase" ]] || problem "kernel $kver: /boot/vmlinuz-$pkgbase is missing"
+        [[ -s "$SYSROOT/boot/initramfs-$pkgbase.img" ]] ||
+            problem "kernel $kver: /boot/initramfs-$pkgbase.img is missing (mkinitcpio failed)"
+    fi
+
+    if ((nvidia_dkms)) && ! find "$dir" -name 'nvidia.ko*' -print -quit 2>/dev/null | grep -q .; then
+        problem "kernel $kver: no nvidia module built for it (DKMS failed)"
+    fi
+done
+
+((kernels > 0)) || problem "no installed kernel found under /usr/lib/modules"
+
+if ((problems > 0)); then
+    echo "jarvos: $problems problem(s) would break the next boot" >&2
+    exit 1
+fi
+echo "  ok      $kernels kernel(s), package database consistent"

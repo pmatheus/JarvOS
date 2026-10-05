@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Render the current JarvOS lockscreen proverb as a Pango-markup interlinear
-block (A2 — Calligraphic Interlinear): pinyin / hanzi / arrow / gloss, plus the
-English meaning in a muted line below.
+block (A2 — Calligraphic Interlinear): pinyin / hanzi / arrow / gloss.
 
 The proverb is read from the same runtime cache `proverb.sh` fills, so the
 hanzi block and any other proverb label always agree. Emits markup on stdout.
@@ -24,15 +23,12 @@ SZ_PINYIN = 11264
 SZ_HANZI = 29491
 SZ_ARROW = 11264
 SZ_GLOSS = 12288
-SZ_MEAN = 13312
 CJK_CELLS = 4
 
 COL_HANZI = "#f5f7fa"
 COL_PINYIN = "#8a8f98"
 COL_ARROW = "#9aa0a8"
 COL_GLOSS = "#c0c8d0"
-COL_MEAN = "#d8dce2"
-COL_RULE = "#3a3a42"
 
 FONT_MONO = "JetBrainsMono NF Light"
 FONT_CJK = "Noto Serif CJK SC"
@@ -172,7 +168,7 @@ def render(entry):
 
     pinyin = line(
         tokens, lambda t: t[1],
-        lambda s: f'<span font_family="{FONT_MONO}" font_style="italic" size="{SZ_PINYIN}" foreground="{COL_PINYIN}" underline="single" underline_color="{COL_RULE}">{s}</span>',
+        lambda s: f'<span font_family="{FONT_MONO}" font_style="italic" size="{SZ_PINYIN}" foreground="{COL_PINYIN}">{s}</span>',
         field)
     hanzi = line(
         tokens, lambda t: t[0],
@@ -184,7 +180,7 @@ def render(entry):
         field)
     gloss = line(
         tokens, lambda t: t[2],
-        lambda s: f'<span font_family="{FONT_MONO}" size="{SZ_GLOSS}" foreground="{COL_GLOSS}" underline="single" underline_color="{COL_RULE}">{s}</span>',
+        lambda s: f'<span font_family="{FONT_MONO}" size="{SZ_GLOSS}" foreground="{COL_GLOSS}">{s}</span>',
         field)
 
     lines = [
@@ -192,7 +188,6 @@ def render(entry):
         hanzi,
         arrow,
         gloss,
-        f'<span font_family="{FONT_CJK}" font_style="italic" size="{SZ_MEAN}" foreground="{COL_MEAN}">\u201c{entry["en"]}\u201d</span>',
     ]
     return "\n".join(lines)
 

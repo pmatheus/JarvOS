@@ -22,14 +22,43 @@ ORDER="$FAKE_STATE/step-order"
 STEPS=(jarvos-update-git jarvos-update-keyring jarvos-update-system-pkgs
     jarvos-migrate jarvos-hook jarvos-update-aur-pkgs
     jarvos-update-orphan-pkgs jarvos-update-analyze-logs jarvos-update-restart
-    jarvos-version snapper)
+    jarvos-update-health jarvos-update-resolve jarvos-version)
 stub_steps() {
     : >"$ORDER"
+    rm -f "$FAKE_STATE"/fails-*
     for s in "${STEPS[@]}"; do
         printf '#!/usr/bin/env bash\nprintf "%%s\\n" "%s" >> "$FAKE_STATE/step-order"\nexit 0\n' \
             "$s" >"$FAKE_BIN/$s"
         chmod +x "$FAKE_BIN/$s"
     done
+    # snapper: only `create` is the snapshot the ordering tests care about,
+    # and it answers with a number the way --print-number does.
+    cat >"$FAKE_BIN/snapper" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+    *create*) printf 'snapper\n' >> "$FAKE_STATE/step-order"; echo 42 ;;
+    *)        printf 'snapper-other %s\n' "$*" >> "$FAKE_STATE/step-order" ;;
+esac
+EOF
+    # The rollback records the snapshot it was asked to restore.
+    printf '#!/usr/bin/env bash\nprintf "jarvos-update-rollback %%s\\n" "$*" >> "$FAKE_STATE/step-order"\nexit 0\n' \
+        >"$FAKE_BIN/jarvos-update-rollback"
+    chmod +x "$FAKE_BIN/snapper" "$FAKE_BIN/jarvos-update-rollback"
+}
+
+# fail_times <step> <n> [exit]: the step fails its first n runs, then succeeds.
+fail_times() {
+    printf '#!/usr/bin/env bash\nprintf "%%s\\n" "%s" >> "$FAKE_STATE/step-order"\nf="$FAKE_STATE/fails-%s"\nn=$(cat "$f" 2>/dev/null || echo %s)\nif [[ $n -gt 0 ]]; then echo $((n - 1)) > "$f"; exit %s; fi\nexit 0\n' \
+        "$1" "$1" "$2" "${3:-1}" >"$FAKE_BIN/$1"
+    chmod +x "$FAKE_BIN/$1"
+}
+
+REPORT="$FAKE_HOME/.local/state/jarvos/reports/last-update.json"
+count() { grep -c "^$1\$" "$ORDER"; }
+report_is() {
+    # report_is <python-expression over d>
+    python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if ($1) else 1)" "$REPORT" 2>/dev/null ||
+        { fail_test "report: $(cat "$REPORT" 2>/dev/null)"; return 1; }
 }
 stub_steps
 
@@ -107,6 +136,20 @@ assert_status "$RUN_STATUS" 0 &&
     assert_contains "$ORDER" "jarvos-update-aur-pkgs" &&
     pass_test
 
+start_test "an AUR failure fails the run, but only after every other step ran"
+# Non-fatal mid-pipeline, fatal at the end: the steps after AUR still get their
+# turn, and the caller still learns the upgrade did not happen.
+stub_steps
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "jarvos-update-aur-pkgs" >> "$FAKE_STATE/step-order"\njarvos-state set aur-update-failed\nexit 0\n' \
+    >"$FAKE_BIN/jarvos-update-aur-pkgs"
+chmod +x "$FAKE_BIN/jarvos-update-aur-pkgs"
+JARVOS_UPDATE_TRANSCRIPT=/tmp/jarvos-update.log run_cmd jarvos-update -y
+{ [[ "$RUN_STATUS" -ne 0 ]] || fail_test "expected non-zero, got 0"; } &&
+    assert_stdout_contains "$RUN_OUT" "AUR packages were not upgraded" &&
+    assert_contains "$ORDER" "jarvos-update-restart" &&
+    pass_test
+rm -f "$FAKE_HOME/.local/state/jarvos/aur-update-failed"
+
 start_test "too little free space aborts before anything runs"
 stub_steps
 JARVOS_UPDATE_TRANSCRIPT=1 JARVOS_MIN_FREE_GIB=999999 run_cmd jarvos-update -y
@@ -133,5 +176,98 @@ interleaved=0
 awk '/^enter$/{d++} /^leave$/{d--} d>1{exit 1}' "$ORDER" || interleaved=1
 { [[ "$interleaved" -eq 0 ]] ||
     fail_test "a second run interleaved with the first (status $second_status)"; } && pass_test
+
+# --- self-repair -----------------------------------------------------------
+
+start_test "a step the resolver fixes is re-run, and the run succeeds"
+stub_steps
+fail_times jarvos-update-system-pkgs 1
+JARVOS_UPDATE_TRANSCRIPT=1 run_cmd jarvos-update -y
+assert_status "$RUN_STATUS" 0 &&
+    { [[ "$(count jarvos-update-system-pkgs)" -eq 2 ]] ||
+        fail_test "system-pkgs ran $(count jarvos-update-system-pkgs) times"; } &&
+    assert_contains "$ORDER" "jarvos-update-resolve" &&
+    assert_not_contains "$ORDER" "jarvos-update-rollback" &&
+    assert_contains "$ORDER" "jarvos-migrate" &&
+    pass_test
+
+start_test "a clean run writes a report the shell can read"
+report_is 'd["outcome"] == "ok" and d["problems"] == []' && pass_test
+
+start_test "after a clean run the snapshot is handed to number cleanup"
+assert_contains "$ORDER" "--cleanup-algorithm number 42" && pass_test
+
+start_test "a step still failing after the resolver rolls back to the snapshot"
+stub_steps
+fail_times jarvos-update-system-pkgs 9
+JARVOS_UPDATE_TRANSCRIPT=1 run_cmd jarvos-update -y
+{ [[ "$RUN_STATUS" -ne 0 ]] || fail_test "expected non-zero, got 0"; } &&
+    assert_contains "$ORDER" "jarvos-update-rollback 42" &&
+    assert_not_contains "$ORDER" "jarvos-migrate" &&
+    assert_not_contains "$ORDER" "jarvos-update-aur-pkgs" &&
+    pass_test
+
+start_test "and the report says it was rolled back, and why"
+report_is 'd["outcome"] == "rolled-back" and "system-pkgs" in d["problems"]' && pass_test
+
+start_test "a system that would not boot after the packages is rolled back"
+stub_steps
+fail_times jarvos-update-health 9
+JARVOS_UPDATE_TRANSCRIPT=1 run_cmd jarvos-update -y
+{ [[ "$RUN_STATUS" -ne 0 ]] || fail_test "expected non-zero, got 0"; } &&
+    assert_contains "$ORDER" "jarvos-update-rollback 42" &&
+    assert_not_contains "$ORDER" "jarvos-migrate" &&
+    pass_test
+
+start_test "a network failure is neither handed to the resolver nor rolled back"
+stub_steps
+fail_times jarvos-update-system-pkgs 9 75
+JARVOS_UPDATE_TRANSCRIPT=1 run_cmd jarvos-update -y
+{ [[ "$RUN_STATUS" -ne 0 ]] || fail_test "expected non-zero, got 0"; } &&
+    assert_not_contains "$ORDER" "jarvos-update-resolve" &&
+    assert_not_contains "$ORDER" "jarvos-update-rollback" &&
+    assert_not_contains "$ORDER" "jarvos-migrate" &&
+    report_is 'd["outcome"] == "offline"' &&
+    pass_test
+
+start_test "a checkout that cannot update does not hold back the system update"
+stub_steps
+fail_times jarvos-update-git 9
+JARVOS_UPDATE_TRANSCRIPT=1 run_cmd jarvos-update -y
+{ [[ "$RUN_STATUS" -ne 0 ]] || fail_test "expected non-zero, got 0"; } &&
+    assert_contains "$ORDER" "jarvos-update-system-pkgs" &&
+    assert_contains "$ORDER" "jarvos-update-restart" &&
+    assert_not_contains "$ORDER" "jarvos-update-rollback" &&
+    report_is 'd["outcome"] == "partial" and "git" in d["problems"]' &&
+    pass_test
+
+start_test "a failed AUR pass is handed to the resolver and tried again"
+stub_steps
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "jarvos-update-aur-pkgs" >> "$FAKE_STATE/step-order"\nif [[ ! -e "$FAKE_STATE/aur-once" ]]; then : > "$FAKE_STATE/aur-once"; jarvos-state set aur-update-failed; else jarvos-state clear aur-update-failed; fi\nexit 0\n' \
+    >"$FAKE_BIN/jarvos-update-aur-pkgs"
+chmod +x "$FAKE_BIN/jarvos-update-aur-pkgs"
+rm -f "$FAKE_STATE/aur-once"
+JARVOS_UPDATE_TRANSCRIPT=1 run_cmd jarvos-update -y
+assert_status "$RUN_STATUS" 0 &&
+    { [[ "$(count jarvos-update-aur-pkgs)" -eq 2 ]] || fail_test "AUR ran $(count jarvos-update-aur-pkgs) times"; } &&
+    pass_test
+
+start_test "without a snapshot there is nothing to roll back to, and it says so"
+stub_steps
+printf '#!/usr/bin/env bash\nexit 1\n' >"$FAKE_BIN/snapper"
+fail_times jarvos-update-system-pkgs 9
+JARVOS_UPDATE_TRANSCRIPT=1 run_cmd jarvos-update -y
+{ [[ "$RUN_STATUS" -ne 0 ]] || fail_test "expected non-zero, got 0"; } &&
+    assert_not_contains "$ORDER" "jarvos-update-rollback" &&
+    assert_stdout_contains "$RUN_OUT" "no snapshot" &&
+    report_is 'd["outcome"] == "failed"' &&
+    pass_test
+
+start_test "the resolver cannot start an update of its own"
+stub_steps
+JARVOS_UPDATE_RESOLVING=1 JARVOS_UPDATE_TRANSCRIPT=1 run_cmd jarvos-update -y
+{ [[ "$RUN_STATUS" -ne 0 ]] || fail_test "expected non-zero, got 0"; } &&
+    assert_not_contains "$ORDER" "jarvos-update-git" &&
+    pass_test
 
 summary "jarvos-update"

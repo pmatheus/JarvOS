@@ -12,8 +12,9 @@ StyledRect {
     property var bar: null
 
     readonly property int padding: Appearance.padding.normal
-    readonly property bool isUpdating: UpdateStatus.updating
+    readonly property bool isUpdating: UpdateStatus.updating || UpdateStatus.autoRunning
     readonly property bool isReboot: UpdateStatus.rebootRequired
+    readonly property bool isRolledBack: UpdateStatus.lastRunNeedsAttention
     readonly property bool isScheduled: UpdateStatus.rebootScheduled
     readonly property bool isRunning: UpdateStatus.running
     readonly property bool hasUpdates: UpdateStatus.total > 0
@@ -23,7 +24,7 @@ StyledRect {
 
     color: isUpdating
         ? Colours.palette.m3primaryContainer
-        : isReboot
+        : isReboot || isRolledBack
             ? Colours.palette.m3errorContainer
             : isScheduled || hasUpdates
                 ? Colours.palette.m3tertiaryContainer
@@ -49,13 +50,15 @@ StyledRect {
                 ? "sync"
                 : root.isReboot
                     ? "restart_alt"
-                    : root.isScheduled
+                    : root.isRolledBack
+                        ? "history"
+                        : root.isScheduled
                         ? "schedule"
                         : "system_update_alt"
 
             color: root.isUpdating
                 ? Colours.palette.m3onPrimaryContainer
-                : root.isReboot
+                : root.isReboot || root.isRolledBack
                     ? Colours.palette.m3onErrorContainer
                     : root.isScheduled || root.hasUpdates
                         ? Colours.palette.m3onTertiaryContainer
@@ -84,7 +87,9 @@ StyledRect {
                 ? qsTr("Atualizando...")
                 : root.isReboot
                     ? qsTr("Reiniciar")
-                    : root.isScheduled
+                    : root.isRolledBack
+                        ? (UpdateStatus.lastOutcome === "rolled-back" ? qsTr("Revertida") : qsTr("Falhou"))
+                        : root.isScheduled
                         ? (UpdateStatus.scheduledRebootTime.length >= 5 ? UpdateStatus.scheduledRebootTime.slice(0, 5) : qsTr("Agendado"))
                         : root.isRunning
                             ? "..."
@@ -94,11 +99,11 @@ StyledRect {
 
             font.pointSize: Appearance.font.size.smaller
             font.family: Appearance.font.family.mono
-            font.bold: root.isUpdating || root.isReboot || root.isScheduled || root.hasUpdates
+            font.bold: root.isUpdating || root.isReboot || root.isRolledBack || root.isScheduled || root.hasUpdates
 
             color: root.isUpdating
                 ? Colours.palette.m3onPrimaryContainer
-                : root.isReboot
+                : root.isReboot || root.isRolledBack
                     ? Colours.palette.m3onErrorContainer
                     : root.isScheduled || root.hasUpdates
                         ? Colours.palette.m3onTertiaryContainer

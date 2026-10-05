@@ -20,6 +20,7 @@ user gnome-keyring-daemon.socket core
 # quickshell-jarvos.service is deliberately NOT enabled: Hyprland starts it from
 # execs.conf (`systemctl --user start`) so the shell lives and dies with the session.
 user jarvos-monitor-layout.path core
+user jarvos-update.timer core
 
 # --- optional (hardware / virt / remote / snapshots) ---
 system docker.service optional

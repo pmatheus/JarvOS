@@ -26,8 +26,12 @@ EXTRA_PATHS = [
 ]
 os.environ["PATH"] = ":".join([p for p in EXTRA_PATHS if p]) + ":" + os.environ.get("PATH", "")
 os.environ["JARVOS_ASSUME_YES"] = "1"
-os.environ["JARVOS_UPDATE_TRANSCRIPT"] = "/tmp/jarvos-update.log"
 os.environ["NO_COLOR"] = "1"
+# JARVOS_UPDATE_TRANSCRIPT is deliberately NOT set here: it is jarvos-update's
+# recursion guard for its own `exec script`, so presetting it suppressed the
+# very transcript it names and left a GUI-launched update with no post-mortem.
+TRANSCRIPT = "/tmp/jarvos-update.log"
+os.environ.pop("JARVOS_UPDATE_TRANSCRIPT", None)
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 if script_dir not in sys.path:
@@ -126,20 +130,41 @@ def update_system():
 
 
 def update_devtools():
-    tools = [
-        ("rustup", ["rustup", "update"], "Rust (rustup)"),
-        ("uv", ["uv", "tool", "upgrade", "--all"], "Python Tools (uv)"),
-        ("flutter", ["flutter", "upgrade"], "Flutter SDK"),
-        ("bun", ["bun", "upgrade"], "Bun Runtime"),
-    ]
+    # The toolchain list lives in jarvos-update-devtools, shared with the daily
+    # timer, so the panel button and the automatic run cannot drift apart.
+    cmd = ["jarvos-update-devtools"]
+    if not shutil.which("jarvos-update-devtools"):
+        local_bin = os.path.expanduser("~/.local/bin/jarvos-update-devtools")
+        if not os.path.exists(local_bin):
+            emit("log", line="jarvos-update-devtools não encontrado")
+            return 1
+        cmd = [local_bin]
+    return run_cmd(cmd, "devtools", "Atualizando ferramentas de desenvolvimento (rust, uv, bun, npm, flutter)...")
 
-    total_rc = 0
-    for name, cmd, label in tools:
-        if shutil.which(name):
-            rc = run_cmd(cmd, "devtools", f"Atualizando {label}...")
-            if rc != 0:
-                total_rc = rc
-    return total_rc
+
+SYSTEM_OUTCOMES = {
+    "ok": None,
+    "partial": "O sistema foi atualizado, mas algo ficou para trás (AUR ou checkout).",
+    "rolled-back": "A atualização falhou e o sistema foi revertido ao snapshot anterior.",
+    "offline": "Sem conexão com os espelhos de pacotes; nada foi alterado.",
+    "failed": "A atualização falhou e não pôde ser revertida automaticamente.",
+}
+
+
+def report_system_outcome():
+    path = os.path.join(
+        os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state")),
+        "jarvos", "reports", "last-update.json",
+    )
+    try:
+        with open(path, encoding="utf-8") as fh:
+            report = json.load(fh)
+    except (OSError, ValueError):
+        return
+    message = SYSTEM_OUTCOMES.get(report.get("outcome"))
+    if message:
+        problems = ", ".join(report.get("problems") or [])
+        emit("log", line=message + (f" ({problems})" if problems else ""))
 
 
 def main():
@@ -157,8 +182,12 @@ def main():
         rc_sys = update_system()
         if rc_sys != 0:
             overall_success = False
+            emit("log", line=f"Falha na atualização do sistema (código {rc_sys}). Transcrição: {TRANSCRIPT}")
+        report_system_outcome()
 
-    if mode in ("--devtools", "--all") and overall_success:
+    # Not gated on the system update: the two halves are independent, and a
+    # failed AUR build must not silently cost the devtools their pass.
+    if mode in ("--devtools", "--all"):
         rc_dev = update_devtools()
         if rc_dev != 0:
             overall_success = False

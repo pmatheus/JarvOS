@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# jarvos-update-resolve <step> [transcript] — let an AI agent fix what no rule
+# covers, so the step can be tried once more.
+#
+# Called by jarvos-update when a step failed for a reason its own rules did
+# not handle. The agent works on the live machine, with sudo. What keeps that
+# bounded is the order around it, not trust in the agent:
+#
+#   before   a snapshot was taken when the update began
+#   after    the step is re-run; its success is the only proof of a fix
+#   failing  the update rolls back to the snapshot
+#
+# Exit 0 means "worth re-running the step" and nothing more. The agent's own
+# verdict is its last line, JARVOS-RESOLVED or JARVOS-UNRESOLVED; anything
+# else counts as unresolved.
+#
+# Seams: JARVOS_RESOLVER (claude), JARVOS_UPDATE_NO_RESOLVE,
+#        JARVOS_RESOLVE_TIMEOUT (seconds), JARVOS_RESOLVE_BUDGET_USD,
+#        JARVOS_RESOLVE_MODEL
+
+set -uo pipefail
+
+# shellcheck source=lib/jarvos-common.sh
+_lib="$(dirname "$(realpath "$0")")/../lib/jarvos-common.sh"
+if [[ -r "$_lib" ]]; then source "$_lib"; else source /usr/share/jarvos/lib/jarvos-common.sh; fi
+unset _lib
+
+STEP="${1-}"
+TRANSCRIPT="${2:-${JARVOS_UPDATE_TRANSCRIPT:-/tmp/jarvos-update.log}}"
+[[ -n "$STEP" ]] || die "usage: jarvos-update-resolve <step> [transcript]"
+
+RESOLVER="${JARVOS_RESOLVER:-claude}"
+TIMEOUT="${JARVOS_RESOLVE_TIMEOUT:-1200}"
+BUDGET="${JARVOS_RESOLVE_BUDGET_USD:-3}"
+MODEL="${JARVOS_RESOLVE_MODEL:-opus}"
+
+if [[ -n "${JARVOS_UPDATE_NO_RESOLVE:-}" ]]; then
+    echo "jarvos: the update resolver is disabled (JARVOS_UPDATE_NO_RESOLVE)"
+    exit 1
+fi
+if ! command -v "$RESOLVER" >/dev/null 2>&1; then
+    echo "jarvos: no update resolver available ($RESOLVER is not installed)" >&2
+    exit 1
+fi
+
+SKILL="${XDG_CONFIG_HOME:-$HOME/.config}/jarvos/agents/skills/resolve-update-failure/SKILL.md"
+[[ -r "$SKILL" ]] || SKILL="$JARVOS_PATH/config/.config/jarvos/agents/skills/resolve-update-failure/SKILL.md"
+
+# The transcript is a PTY recording: strip the escape sequences and carriage
+# returns, and keep the end, where the failure is.
+evidence="$(sed -e 's/\x1b\[[0-9;?]*[A-Za-z]//g' -e 's/\r$//' -e 's/.*\r//' "$TRANSCRIPT" 2>/dev/null |
+    grep -v '^[[:space:]]*$' | tail -n 150)"
+
+prompt="You are the automatic conflict resolver of a JarvOS (Arch Linux) system update.
+The update step \`$STEP\` failed and its built-in rules could not fix it. Fix the
+underlying cause on this machine so that re-running \`$STEP\` succeeds.
+
+Procedure and context: $SKILL (read it first).
+JarvOS checkout: $JARVOS_PATH
+
+Hard rules, no exceptions:
+- Never run jarvos-update or any jarvos-update-* command: the running update holds
+  its lock, and it re-runs the step itself after you finish.
+- Never touch anything under /home except the JarvOS checkout above.
+- Never use pacman --overwrite with a glob, never --overwrite a file another
+  package owns, never -Rdd, never remove a package the user installed explicitly
+  unless pacman itself proposes it as a replacement.
+- Never delete, modify or roll back a snapper snapshot, and never reboot.
+- Never git push, never rewrite published history, never discard uncommitted
+  work (stash it instead).
+- If the fix needs a human decision or is not safe unattended, change nothing.
+
+End your reply with exactly one line: JARVOS-RESOLVED if re-running the step
+should now succeed, or JARVOS-UNRESOLVED followed by one sentence on why.
+
+Last lines of the update transcript:
+$evidence"
+
+echo "Asking the update resolver to fix $STEP (timeout ${TIMEOUT}s, budget \$${BUDGET})"
+
+out="$(mktemp)"
+trap 'rm -f "$out"' EXIT
+
+export JARVOS_UPDATE_RESOLVING=1
+(cd "$JARVOS_PATH" 2>/dev/null || cd "$HOME" || exit 1
+    timeout "$TIMEOUT" "$RESOLVER" -p "$prompt" --model "$MODEL" \
+        --dangerously-skip-permissions --max-budget-usd "$BUDGET" \
+        --output-format text </dev/null) 2>&1 | tee "$out"
+
+verdict="$(grep -E '^JARVOS-(UN)?RESOLVED' "$out" | tail -1)"
+if [[ "$verdict" == JARVOS-RESOLVED* ]]; then
+    echo "jarvos: the resolver reports $STEP fixed — re-running it to check"
+    exit 0
+fi
+echo "jarvos: the resolver could not fix $STEP" >&2
+exit 1

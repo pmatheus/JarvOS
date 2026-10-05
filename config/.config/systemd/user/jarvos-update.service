@@ -1,0 +1,18 @@
+[Unit]
+Description=JarvOS automatic update (system, AUR and developer tools)
+Documentation=file:///usr/share/jarvos/bin/jarvos-update
+# Unattended runs on battery are how a laptop dies mid-transaction.
+ConditionACPower=true
+
+[Service]
+Type=oneshot
+# The user manager's PATH has neither ~/.local/bin, where a checkout install
+# links the jarvos-* commands, nor the toolchains the devtools pass updates.
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:%h/.bun/bin:%h/go/bin:%h/.pub-cache/bin:/opt/flutter/bin:/usr/local/bin:/usr/bin
+# Waits for a connection instead of failing on the first mirror; the update
+# itself still treats an unreachable network as "try again tomorrow".
+ExecStartPre=-/usr/bin/nm-online -q -t 120
+ExecStart=/usr/bin/env jarvos-update-auto
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=3h

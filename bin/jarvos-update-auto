@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# jarvos-update-auto — what jarvos-update.timer runs: everything, unattended.
+#
+# The system first, through jarvos-update -y with all of its self-repair,
+# then the per-user toolchains. The toolchains run even when the system
+# update did not succeed: the two are independent, and a rolled-back kernel is
+# no reason for rustup to wait another day.
+#
+# The outcome lands in $JARVOS_STATE/reports/last-auto.json for the shell's
+# update panel, and anything other than a clean run raises a desktop
+# notification, because nobody is watching a timer.
+
+set -uo pipefail
+
+# shellcheck source=lib/jarvos-common.sh
+_lib="$(dirname "$(realpath "$0")")/../lib/jarvos-common.sh"
+if [[ -r "$_lib" ]]; then source "$_lib"; else source /usr/share/jarvos/lib/jarvos-common.sh; fi
+unset _lib
+
+# The steps are siblings of this file. A checkout install links only some
+# commands onto PATH, and a timer starts with almost no PATH at all; appended
+# rather than prepended, so whatever PATH already resolves still wins.
+PATH="$PATH:$(dirname "$(realpath "$0")")"
+
+export JARVOS_UPDATE_AUTO=1
+REPORT_DIR="$JARVOS_STATE/reports"
+mkdir -p "$REPORT_DIR"
+started="$(date -Iseconds)"
+
+system_rc=0
+jarvos-update -y || system_rc=$?
+
+devtools_rc=0
+jarvos-update-devtools || devtools_rc=$?
+
+outcome="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["outcome"])' \
+    "$REPORT_DIR/last-update.json" 2>/dev/null || echo unknown)"
+
+printf '{"started": "%s", "finished": "%s", "system": "%s", "system_exit": %d, "devtools_exit": %d}\n' \
+    "$started" "$(date -Iseconds)" "$outcome" "$system_rc" "$devtools_rc" \
+    >"$REPORT_DIR/last-auto.json.tmp"
+mv -f "$REPORT_DIR/last-auto.json.tmp" "$REPORT_DIR/last-auto.json"
+
+notify() {
+    command -v notify-send >/dev/null 2>&1 || return 0
+    notify-send -a "JarvOS" -i system-software-update "$@" 2>/dev/null || true
+}
+
+case "$outcome" in
+ok) ;;
+partial) notify "Atualização automática parcial" "O sistema foi atualizado, mas algo ficou para trás. Veja o painel de atualizações." ;;
+rolled-back) notify -u critical "Atualização revertida" "Uma atualização falhou e o sistema voltou ao estado anterior. Veja o painel de atualizações." ;;
+offline) ;;
+*) notify -u critical "Atualização automática falhou" "Transcrição em /tmp/jarvos-update.log" ;;
+esac
+((devtools_rc == 0)) || [[ "$outcome" != ok ]] ||
+    notify "Ferramentas de desenvolvimento" "Algumas ferramentas não foram atualizadas."
+
+((system_rc == 0 && devtools_rc == 0))

@@ -24,6 +24,30 @@ Singleton {
         "scheduled_seconds_left": 0
     })
 
+    // The daily jarvos-update.timer, and how the last update of any kind ended.
+    property var auto: ({
+        "enabled": false,
+        "next": "",
+        "running": false,
+        "last_outcome": "",
+        "last_finished": "",
+        "last_problems": [],
+        "last_automatic": false,
+        "last_snapshot": ""
+    })
+
+    readonly property bool autoEnabled: (root.auto && root.auto.enabled) ? true : false
+    readonly property bool autoRunning: (root.auto && root.auto.running) ? true : false
+    readonly property string autoNext: (root.auto && root.auto.next) ? root.auto.next : ""
+    readonly property string lastOutcome: (root.auto && root.auto.last_outcome) ? root.auto.last_outcome : ""
+    readonly property var lastProblems: (root.auto && root.auto.last_problems) ? root.auto.last_problems : []
+    // A rollback or an unrecoverable failure is news even with nothing pending.
+    readonly property bool lastRunNeedsAttention: root.lastOutcome === "rolled-back" || root.lastOutcome === "failed"
+
+    // Everything the bar widget could possibly say. When none of it holds, the
+    // widget would only ever read "0", so the bar drops it entirely.
+    readonly property bool needsAttention: root.total > 0 || root.rebootRequired || root.rebootScheduled || root.updating || root.updateFinished || root.autoRunning || root.lastRunNeedsAttention
+
     readonly property bool rebootRequired: (root.reboot && root.reboot.required) ? true : false
     readonly property var rebootReasons: (root.reboot && root.reboot.reasons) ? root.reboot.reasons : []
     readonly property bool rebootScheduled: (root.reboot && root.reboot.scheduled) ? true : false
@@ -44,6 +68,8 @@ Singleton {
 
         root.updating = true;
         root.updateFinished = false;
+        if (root.autoRunning)
+            root.pushLog(qsTr("A atualização automática está em andamento; esta começa quando ela terminar."));
         root.updateSuccess = false;
         root.updatePhase = qsTr("Iniciando atualização...");
         root.currentPhaseId = "init";
@@ -119,6 +145,16 @@ Singleton {
         onTriggered: root.refresh()
     }
 
+    // The hourly check would only notice the end of an automatic run up to an
+    // hour late; while one is running, watch it closely.
+    Timer {
+        id: autoWatchTimer
+        interval: 60000
+        running: root.autoRunning
+        repeat: true
+        onTriggered: root.refresh()
+    }
+
     // Delayed refresh after schedule/cancel
     Timer {
         id: scheduleRefreshTimer
@@ -143,6 +179,8 @@ Singleton {
                     root.total = data.total ?? 0;
                     if (data.reboot)
                         root.reboot = data.reboot;
+                    if (data.auto)
+                        root.auto = data.auto;
                     root.error = "";
                 } catch (err) {
                     root.error = String(err);

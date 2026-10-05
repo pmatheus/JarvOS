@@ -1,0 +1,13 @@
+[Unit]
+Description=Daily JarvOS automatic update
+
+[Timer]
+# Early morning, when the machine is least likely to be in use. Persistent
+# catches a run missed while the machine was off at the next start, and the
+# delay keeps that catch-up from landing on top of the login.
+OnCalendar=*-*-* 04:00
+Persistent=true
+RandomizedDelaySec=30min
+
+[Install]
+WantedBy=timers.target

@@ -11,20 +11,36 @@
 #   prune before snapshot   the cache is on the snapshotted subvolume, so
 #                           pruning after it frees nothing until the
 #                           snapshot ages out
-#   git before packages     a merge conflict must abort before any system
-#                           mutation
+#   git before packages     a checkout that cannot update is set aside
+#                           before any system mutation, and the release on
+#                           disk stays whole either way
 #   keyring before packages a stale keyring fails the main transaction
 #                           unrecoverably, in the middle
+#   health before migrations
+#                           nothing is built on top of a system that would
+#                           not boot
 #   migrations after them   migrations ship with the packages above and are
 #                           written against them
 #   AUR last                a broken third-party build must not take down
 #                           the system update
 #
-# Recovery is out-of-band: reboot into the snapshot, or just re-run. Every
-# step is --needed-guarded or marker-guarded, so retry is a real remedy.
+# Self-repair, in three layers, each only reached when the one before failed:
+#   rules      each step resolves the failures it knows by rule (see the
+#              steps themselves)
+#   resolver   an AI agent gets one try at what no rule covers, and the step
+#              is re-run to prove the fix (jarvos-update-resolve)
+#   rollback   a system step that still fails, or a system that would not
+#              boot, is put back live to the snapshot taken before anything
+#              changed (jarvos-update-rollback), and that is verified too
+#
+# Exit 75 from a step is the network. It is neither repaired nor rolled back
+# over: nothing changed, and later is the remedy.
+#
+# Every run ends in $JARVOS_STATE/reports/last-update.json: ok, partial (the
+# system is updated, something else is not), rolled-back, offline or failed.
 #
 # Seams: JARVOS_UPDATE_TRANSCRIPT, JARVOS_UPDATE_LOCK_FD, JARVOS_MIN_FREE_GIB,
-#        JARVOS_LOCK_FILE
+#        JARVOS_LOCK_FILE, JARVOS_UPDATE_NO_RESOLVE
 
 set -euo pipefail
 
@@ -32,6 +48,17 @@ set -euo pipefail
 _lib="$(dirname "$(realpath "$0")")/../lib/jarvos-common.sh"
 if [[ -r "$_lib" ]]; then source "$_lib"; else source /usr/share/jarvos/lib/jarvos-common.sh; fi
 unset _lib
+
+# The steps are siblings of this file. A checkout install links only some
+# commands onto PATH, and a timer starts with almost no PATH at all; appended
+# rather than prepended, so whatever PATH already resolves still wins.
+PATH="$PATH:$(dirname "$(realpath "$0")")"
+
+# The resolver works inside a running update, which holds the lock. An update
+# started from in there would wait on that lock until the resolver timed out.
+if [[ -n "${JARVOS_UPDATE_RESOLVING:-}" ]]; then
+    die "refusing to start an update from inside the update resolver"
+fi
 
 TRANSCRIPT="${JARVOS_UPDATE_TRANSCRIPT:-}"
 LOCK_FILE="${JARVOS_LOCK_FILE:-/tmp/jarvos-update.lock}"
@@ -81,7 +108,7 @@ if [[ -n "$ASSUME_YES" ]]; then export JARVOS_ASSUME_YES=1; fi
 on_error() {
     printf '\njarvos-update failed. The full transcript is at %s\n' "$TRANSCRIPT" >&2
     printf 'Diagnose with: jarvos-agent-diagnose update\n' >&2
-    printf 'Re-run jarvos-update to resume, or reboot into a snapshot to roll back.\n' >&2
+    printf 'Re-run jarvos-update to resume.\n' >&2
 }
 trap on_error ERR
 
@@ -98,24 +125,139 @@ if [[ -z "$ASSUME_YES" ]]; then
     [[ -z "$reply" || "$reply" == [yY]* ]] || exit 0
 fi
 
+# --- the report ----------------------------------------------------------
+REPORT_DIR="$JARVOS_STATE/reports"
+export JARVOS_UPDATE_RUN_DIR="$JARVOS_STATE/update-run"
+mkdir -p "$REPORT_DIR" "$JARVOS_UPDATE_RUN_DIR"
+
+STARTED="$(date -Iseconds)"
+OUTCOME="failed"
+PROBLEMS=()
+PRE=""
+
+write_report() {
+    local problems="" p
+    for p in "${PROBLEMS[@]}"; do problems+="${problems:+, }\"$p\""; done
+    printf '{"started": "%s", "finished": "%s", "outcome": "%s", "problems": [%s], "snapshot": "%s", "automatic": %s, "transcript": "%s"}\n' \
+        "$STARTED" "$(date -Iseconds)" "$OUTCOME" "$problems" "$PRE" \
+        "$([[ -n "${JARVOS_UPDATE_AUTO:-}" ]] && echo true || echo false)" "$TRANSCRIPT" \
+        >"$REPORT_DIR/last-update.json.tmp"
+    mv -f "$REPORT_DIR/last-update.json.tmp" "$REPORT_DIR/last-update.json"
+    if [[ "$OUTCOME" != ok ]]; then
+        printf '\njarvos-update: %s. The full transcript is at %s\n' "$OUTCOME" "$TRANSCRIPT" >&2
+    fi
+}
+trap write_report EXIT
+
 # --- prune, then snapshot ------------------------------------------------
 sudo pacman -Sc --noconfirm >/dev/null 2>&1 || true
 
+# Created without a cleanup algorithm, so the hourly number cleanup cannot
+# delete the rollback point out from under a long update; it is handed to
+# that cleanup only once the run has succeeded.
 if command -v snapper >/dev/null 2>&1; then
-    sudo snapper create --description "before jarvos-update" >/dev/null 2>&1 ||
-        echo "jarvos-update: could not create a snapshot — continuing without a rollback point" >&2
+    PRE="$(sudo snapper create --type pre --print-number --description "before jarvos-update" 2>/dev/null)" || PRE=""
+    PRE="$(printf '%s' "$PRE" | tr -dc '0-9')"
 fi
+[[ -n "$PRE" ]] || echo "jarvos-update: could not create a snapshot — continuing without a rollback point" >&2
+pacman -Q >"$JARVOS_UPDATE_RUN_DIR/packages-before" 2>/dev/null || true
+
+# --- self-repair ---------------------------------------------------------
+
+# attempt <step>: run it; if it fails for a reason other than the network,
+# give the resolver one go and run it once more. Returns the step's status.
+attempt() {
+    local step="$1" rc=0
+    "$step" || rc=$?
+    ((rc == 0 || rc == JARVOS_EX_TEMPFAIL)) && return "$rc"
+    echo "jarvos-update: $step failed (exit $rc)"
+    if jarvos-update-resolve "$step" "$TRANSCRIPT"; then
+        rc=0
+        "$step" || rc=$?
+    fi
+    return "$rc"
+}
+
+# roll_back <why>: put the system back to $PRE and end the run.
+roll_back() {
+    PROBLEMS+=("$1")
+    if [[ -z "$PRE" ]]; then
+        echo "jarvos-update: $1 failed and there is no snapshot to roll back to" >&2
+        OUTCOME=failed
+        exit 1
+    fi
+    echo "jarvos-update: $1 failed — rolling the system back to snapshot $PRE"
+    if jarvos-update-rollback "$PRE" && jarvos-update-health; then
+        OUTCOME=rolled-back
+    else
+        PROBLEMS+=(rollback)
+        OUTCOME=failed
+        echo "jarvos-update: the live rollback did not verify — boot snapshot $PRE from the GRUB menu" >&2
+    fi
+    exit 1
+}
+
+# system_step <step> <name>: a step the system's integrity depends on.
+system_step() {
+    local rc=0
+    attempt "$1" || rc=$?
+    ((rc == 0)) && return 0
+    if ((rc == JARVOS_EX_TEMPFAIL)); then
+        PROBLEMS+=(network)
+        OUTCOME=offline
+        exit 1
+    fi
+    roll_back "$2"
+}
 
 # --- the pipeline --------------------------------------------------------
-jarvos-update-git
-jarvos-update-keyring
-jarvos-update-system-pkgs
+# The checkout step leaves a whole release on disk whether or not it
+# succeeds, so its failure is recorded rather than allowed to hold back the
+# system's own security updates.
+git_rc=0
+attempt jarvos-update-git || git_rc=$?
+((git_rc == 0)) || PROBLEMS+=(git)
+
+system_step jarvos-update-keyring keyring
+system_step jarvos-update-system-pkgs system-pkgs
+system_step jarvos-update-health health
+
 jarvos-migrate
 jarvos-hook post-update
+
+# Non-fatal by contract: the step exits 0 and leaves a marker. The marker is
+# what gets the resolver its turn here.
 jarvos-update-aur-pkgs
+if jarvos-state check aur-update-failed &&
+    jarvos-update-resolve jarvos-update-aur-pkgs "$TRANSCRIPT"; then
+    jarvos-update-aur-pkgs
+fi
+jarvos-state check aur-update-failed && PROBLEMS+=(aur)
+
+# An AUR package can break the boot as well as a repo one can (DKMS drivers
+# live there), so the gate runs again before anything is declared done.
+system_step jarvos-update-health health-after-aur
+
 jarvos-update-orphan-pkgs
 jarvos-update-analyze-logs
 jarvos-update-restart
 
 trap - ERR
+
+if [[ -n "$PRE" ]]; then
+    sudo snapper modify --cleanup-algorithm number "$PRE" >/dev/null 2>&1 || true
+fi
+
+if ((${#PROBLEMS[@]} > 0)); then
+    OUTCOME=partial
+    if [[ " ${PROBLEMS[*]} " == *" aur "* ]]; then
+        printf '\njarvos-update: AUR packages were not upgraded.\n' >&2
+    fi
+    if [[ " ${PROBLEMS[*]} " == *" git "* ]]; then
+        printf '\njarvos-update: the JarvOS checkout was not updated.\n' >&2
+    fi
+    exit 1
+fi
+
+OUTCOME=ok
 printf '\nJarvOS is up to date (%s)\n' "$(jarvos-version 2>/dev/null || echo unknown)"

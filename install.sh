@@ -239,6 +239,11 @@ install_dotfiles() {
 
     cp -rf config/.config/* "$XDG_CONFIG_HOME/"
 
+    # The daily automatic update. Its units arrived with config/ just above,
+    # which is why this is here and not in setup_services.
+    systemctl --user daemon-reload 2>/dev/null || true
+    systemctl --user enable jarvos-update.timer 2>/dev/null || warn "could not enable jarvos-update.timer"
+
     mkdir -p "$HOME/.local/bin"
     ln -sfn "$base/bin/jarvos-shell" "$HOME/.local/bin/jarvos-shell"
     ln -sfn "$base/bin/jarvos-desktop" "$HOME/.local/bin/jarvos-desktop"

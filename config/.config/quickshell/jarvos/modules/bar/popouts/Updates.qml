@@ -501,6 +501,36 @@ Item {
                 }
             }
 
+            // 1b. The daily automatic update and how the last run ended
+            StyledText {
+                readonly property var outcomeLabels: ({
+                    "ok": qsTr("concluída"),
+                    "partial": qsTr("parcial (%1)"),
+                    "rolled-back": qsTr("falhou e foi revertida (%1)"),
+                    "offline": qsTr("sem rede, nada mudou"),
+                    "failed": qsTr("falhou sem reverter (%1)")
+                })
+                readonly property string lastText: {
+                    const label = outcomeLabels[UpdateStatus.lastOutcome];
+                    if (!label)
+                        return "";
+                    return label.includes("%1") ? label.arg(UpdateStatus.lastProblems.join(", ")) : label;
+                }
+
+                Layout.fillWidth: true
+                text: (UpdateStatus.autoRunning
+                        ? qsTr("Atualização automática em andamento")
+                        : UpdateStatus.autoEnabled
+                            ? qsTr("Automática: diária") + (UpdateStatus.autoNext ? qsTr(" · próxima %1").arg(UpdateStatus.autoNext) : "")
+                            : qsTr("Atualização automática desativada"))
+                    + (lastText ? qsTr(" · última: %1").arg(lastText) : "")
+                font.pointSize: Appearance.font.size.smaller
+                color: UpdateStatus.lastRunNeedsAttention || !UpdateStatus.autoEnabled
+                    ? Colours.palette.m3error
+                    : Colours.palette.m3onSurfaceVariant
+                wrapMode: Text.WordWrap
+            }
+
             // 2. Restart Banner (Required, Scheduled or Manual Scheduler)
             StyledRect {
                 id: restartCard
