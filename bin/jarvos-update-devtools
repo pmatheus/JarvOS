@@ -11,6 +11,12 @@
 #   npm update -g           refuses to cross a major version, which is how a
 #                           global stays "outdated" forever; each outdated
 #                           global is pinned to @latest instead
+#   flutter upgrade         refuses to run over local edits in the SDK
+#                           checkout (usually a pubspec.lock its own tooling
+#                           rewrote); they are stashed, never discarded, and
+#                           the upgrade retried
+#
+# Seams: JARVOS_DEVTOOLS_ONLY (space-separated tool names to limit the run to)
 
 set -uo pipefail
 
@@ -21,27 +27,47 @@ unset _lib
 
 failed=()
 
+wanted() {
+    [[ -z "${JARVOS_DEVTOOLS_ONLY:-}" || " $JARVOS_DEVTOOLS_ONLY " == *" $1 "* ]]
+}
+
 tool() {
-    # tool <label> <command...>
-    local label="$1"
-    shift
-    command -v "$1" >/dev/null 2>&1 || return 0
+    # tool <name> <label> <command...> — <name> is the binary that must exist
+    local name="$1" label="$2"
+    shift 2
+    wanted "$name" || return 0
+    command -v "$name" >/dev/null 2>&1 || return 0
     echo "Updating $label"
     "$@" || failed+=("$label")
 }
 
-tool "Rust (rustup)" rustup update
-tool "Python tools (uv)" uv tool upgrade --all
-tool "Flutter SDK" flutter upgrade
-tool "Bun runtime" bun upgrade
-tool "Bun global packages" bun update -g --latest
+flutter_upgrade() {
+    local log sdk rc=0
+    log="$(mktemp)"
+    flutter upgrade 2>&1 | tee "$log" || rc=${PIPESTATUS[0]}
+    if ((rc != 0)) && grep -q 'local changes that would be erased' "$log"; then
+        sdk="$(dirname "$(dirname "$(readlink -f "$(command -v flutter)")")")"
+        echo "jarvos: stashing local edits in $sdk so Flutter can upgrade (git -C $sdk stash list)"
+        rc=0
+        git -C "$sdk" stash push --quiet -m "jarvos-update: local edits before flutter upgrade" &&
+            flutter upgrade || rc=$?
+    fi
+    rm -f "$log"
+    return "$rc"
+}
 
-if command -v npm >/dev/null 2>&1; then
+tool rustup "Rust (rustup)" rustup update
+tool uv "Python tools (uv)" uv tool upgrade --all
+tool flutter "Flutter SDK" flutter_upgrade
+tool bun "Bun runtime" bun upgrade
+tool bun "Bun global packages" bun update -g --latest
+
+if wanted npm && command -v npm >/dev/null 2>&1; then
     echo "Checking global npm packages"
     mapfile -t outdated < <(npm outdated -g --depth=0 --json 2>/dev/null |
         python3 -c 'import json,sys; [print(f"{n}@latest") for n in json.loads(sys.stdin.read() or "{}")]' 2>/dev/null)
     if ((${#outdated[@]} > 0)); then
-        tool "${#outdated[@]} global npm package(s)" npm install -g "${outdated[@]}"
+        tool npm "${#outdated[@]} global npm package(s)" npm install -g "${outdated[@]}"
     else
         echo "  global npm packages are current"
     fi

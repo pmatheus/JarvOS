@@ -9,6 +9,7 @@ system NetworkManager.service core
 system bluetooth.service core
 system sddm.service core
 system systemd-timesyncd.service core
+system linux-modules-cleanup.service core
 user pipewire.socket core
 user pipewire-pulse.socket core
 user wireplumber.service core

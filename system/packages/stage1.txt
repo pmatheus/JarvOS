@@ -14,6 +14,9 @@
 # === BASE SYSTEM ===
 base
 linux
+# Keeps the running kernel's modules on disk across a kernel upgrade, so a
+# machine updated by the daily timer can still load modules until it reboots.
+kernel-modules-hook
 linux-firmware
 sudo
 git

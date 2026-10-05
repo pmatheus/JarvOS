@@ -350,4 +350,49 @@ start_test "no agent installed is a plain failure, not a crash"
 JARVOS_RESOLVER=/nonexistent/claude run_cmd jarvos-update-resolve jarvos-update-system-pkgs "$TRANSCRIPT_FILE"
 assert_status "$RUN_STATUS" 1 && pass_test
 
+# --- jarvos-update-devtools ----------------------------------------------
+
+# A Flutter SDK is a git checkout, and `flutter upgrade` refuses to run over
+# local edits (usually a pubspec.lock its own tooling rewrote). The fake
+# refuses exactly the way the real one does, until the tree is clean.
+SDK="$SANDBOX_ROOT/flutter"
+make_flutter_sdk() {
+    rm -rf "$SDK"
+    mkdir -p "$SDK/bin"
+    git -C "$SDK" init -q
+    printf 'lock: 1\n' >"$SDK/pubspec.lock"
+    git -C "$SDK" add pubspec.lock
+    git -C "$SDK" -c user.name=t -c user.email=t@t commit -q -m sdk
+    cat >"$SDK/bin/flutter" <<'EOF'
+#!/usr/bin/env bash
+sdk="$(dirname "$(dirname "$(readlink -f "$0")")")"
+if [[ -n "$(git -C "$sdk" status --porcelain --untracked-files=no)" ]]; then
+    echo 'Your flutter checkout has local changes that would be erased by upgrading.'
+    exit 1
+fi
+echo upgraded >> "$FAKE_STATE/flutter-upgraded"
+EOF
+    chmod +x "$SDK/bin/flutter"
+    ln -sfn "$SDK/bin/flutter" "$FAKE_BIN/flutter"
+}
+
+make_flutter_sdk
+start_test "a Flutter upgrade blocked by local edits stashes them and goes through"
+printf 'lock: 2\n' >"$SDK/pubspec.lock"
+rm -f "$FAKE_STATE/flutter-upgraded"
+JARVOS_DEVTOOLS_ONLY=flutter run_cmd jarvos-update-devtools
+assert_status "$RUN_STATUS" 0 &&
+    assert_file_exists "$FAKE_STATE/flutter-upgraded" &&
+    { git -C "$SDK" stash show -p 2>/dev/null | grep -q '^+lock: 2' || fail_test "edit not kept in the stash"; } &&
+    pass_test
+
+make_flutter_sdk
+start_test "a clean Flutter checkout upgrades without touching the stash"
+rm -f "$FAKE_STATE/flutter-upgraded"
+JARVOS_DEVTOOLS_ONLY=flutter run_cmd jarvos-update-devtools
+assert_status "$RUN_STATUS" 0 &&
+    assert_file_exists "$FAKE_STATE/flutter-upgraded" &&
+    { [[ -z "$(git -C "$SDK" stash list)" ]] || fail_test "stashed with nothing to stash"; } &&
+    pass_test
+
 summary "jarvos-update-recovery"

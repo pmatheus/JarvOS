@@ -3,6 +3,7 @@
 # ╚══════════════════════════════════════════════════════════════╝
 
 # === CORE SYSTEM ===
+kernel-modules-hook
 axel
 bc
 coreutils

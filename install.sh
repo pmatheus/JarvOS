@@ -131,6 +131,9 @@ setup_services() {
     step "Enabling services..."
     systemctl --user enable ydotool --now 2>/dev/null || sudo systemctl --global enable ydotool 2>/dev/null || true
     sudo systemctl enable bluetooth --now 2>/dev/null || true
+    # kernel-modules-hook keeps the running kernel's modules across an upgrade;
+    # this service clears them out once the machine has booted the new kernel.
+    sudo systemctl enable linux-modules-cleanup.service 2>/dev/null || true
 
     # OpenRGB
     sudo tee /lib/systemd/system/openrgb.service > /dev/null << 'EOF'
