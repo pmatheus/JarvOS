@@ -23,6 +23,8 @@
 #                           written against them
 #   AUR last                a broken third-party build must not take down
 #                           the system update
+#   stale services last     only once every package is in place is a
+#                           restart guaranteed to pick up the final code
 #
 # Self-repair, in three layers, each only reached when the one before failed:
 #   rules      each step resolves the failures it knows by rule (see the
@@ -241,6 +243,7 @@ system_step jarvos-update-health health-after-aur
 jarvos-update-orphan-pkgs
 jarvos-update-analyze-logs
 jarvos-update-restart
+jarvos-update-restart-stale
 
 trap - ERR
 

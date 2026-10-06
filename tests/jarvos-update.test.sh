@@ -22,7 +22,7 @@ ORDER="$FAKE_STATE/step-order"
 STEPS=(jarvos-update-git jarvos-update-keyring jarvos-update-system-pkgs
     jarvos-migrate jarvos-hook jarvos-update-aur-pkgs
     jarvos-update-orphan-pkgs jarvos-update-analyze-logs jarvos-update-restart
-    jarvos-update-health jarvos-update-resolve jarvos-version)
+    jarvos-update-health jarvos-update-resolve jarvos-update-restart-stale jarvos-version)
 stub_steps() {
     : >"$ORDER"
     rm -f "$FAKE_STATE"/fails-*
@@ -92,6 +92,10 @@ start_test "AUR runs after migrations, so a bad build cannot strand them"
 start_test "the snapshot is taken before anything mutates the system"
 { [[ "$(pos snapper)" -lt "$(pos jarvos-update-git)" ]] ||
     fail_test "snapshot taken after mutation began"; } && pass_test
+
+start_test "running services are moved onto the new code after every package"
+{ [[ "$(pos jarvos-update-restart-stale)" -gt "$(pos jarvos-update-aur-pkgs)" ]] ||
+    fail_test "stale services restarted before AUR"; } && pass_test
 
 start_test "post-update hooks fire after migrations"
 { [[ "$(pos jarvos-hook)" -gt "$(pos jarvos-migrate)" ]] ||

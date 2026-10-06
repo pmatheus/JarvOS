@@ -241,6 +241,93 @@ def uv_status():
     return group("uv", "uv", "speed", [label] + installed[:30], "info")
 
 
+def jarvos_cmd(name):
+    found = shutil.which(name)
+    if found:
+        return found
+    local = os.path.expanduser(f"~/.local/bin/{name}")
+    return local if os.path.exists(local) else ""
+
+
+# Processes in the login session that are plumbing, not something the user
+# opened and would know to reopen.
+SESSION_HELPERS = {
+    "(sd-pam)", "bash", "bwrap", "cat", "chrome_crashpad", "fish", "kitten",
+    "sddm-helper", "sh", "sleep", "start-hyprland", "wl-paste", "zsh",
+}
+
+
+def has_desktop_entry(app_id):
+    dirs = [os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share"))]
+    dirs += os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(":")
+    return any(os.path.exists(os.path.join(d, "applications", f"{app_id}.desktop")) for d in dirs)
+
+
+def classify_user_unit(unit):
+    """("app" | "service", name) for a unit of the user's service manager."""
+    if unit == "init.scope":
+        return "service", "systemd --user"
+    base = re.sub(r"\.(service|scope)$", "", unit)
+    activated = re.match(r"dbus-:[0-9.]+-(.+?)(@.*)?$", base)
+    if activated:
+        # D-Bus activation starts apps and background services alike; only a
+        # launcher entry says the user ever opened it themselves.
+        app_id = activated.group(1)
+        kind = "app" if has_desktop_entry(app_id) else "service"
+        return kind, app_id.split(".")[-1]
+    if unit.endswith(".scope") or base.startswith("app-"):
+        name = re.sub(r"^app-", "", re.sub(r"@[^@]*$", "", base))
+        name = re.sub(r"(-[0-9]+)+$", "", name)  # launch counters, PIDs
+        return "app", name.split(".")[-1] if "." in name else name
+    return "service", base
+
+
+def stale_status():
+    """What is still running code the last update replaced.
+
+    Informational, never counted in the badge: these are not updates to
+    install but programs to reopen. Services jarvos-update could restart
+    safely are already restarted by the time this runs; what is left is the
+    desktop, its apps, and the services it deliberately leaves alone.
+    """
+    title, icon = "Rodando código antigo", "history"
+    cmd = jarvos_cmd("jarvos-update-stale")
+    if not cmd:
+        return missing("stale", title, icon)
+    rc, out, _ = run(["sudo", "-n", cmd], timeout=30)
+    if rc != 0:
+        rc, out, _ = run([cmd], timeout=30)
+
+    apps, user_services, services = {}, set(), set()
+    for line in out.splitlines():
+        fields = line.split("\t")
+        if len(fields) != 4:
+            continue
+        scope, unit, _pid, comm = fields
+        if scope == "user":
+            kind, name = classify_user_unit(unit)
+            if kind == "app":
+                apps.setdefault(name.lower(), name)
+            else:
+                user_services.add(name)
+        elif scope == "session":
+            if comm not in SESSION_HELPERS:
+                apps.setdefault(comm.lower(), comm)
+        elif scope == "system" and unit.endswith(".service"):
+            services.add(unit)
+        elif scope == "init":
+            services.add("systemd (PID 1)")
+
+    items = [f"reabrir: {apps[k]}" for k in sorted(apps)]
+    items += [f"serviço do usuário: {name}" for name in sorted(user_services)]
+    items += [f"serviço: {name}" for name in sorted(services)]
+    if not items:
+        return group("stale", title, icon, [], "ok")
+    label = (f"{len(apps)} app(s), {len(user_services)} serviço(s) do usuário e "
+             f"{len(services)} do sistema ainda usam código anterior à atualização")
+    return group("stale", title, icon, [label] + items, "info")
+
+
 def state_dir():
     return os.path.join(os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state")), "jarvos")
 
@@ -323,9 +410,18 @@ def reboot_status():
             userspace_version = parts[1].rsplit("-", 1)[0] if rc == 0 and len(parts) >= 2 else ""
             if module_version and userspace_version and module_version != userspace_version:
                 reboot_required = True
+                # Reloading the module only helps if DKMS built the new one
+                # for the RUNNING kernel. When the kernel changed in the same
+                # update, the running kernel only has the old module.
+                _, built, _ = run(["modinfo", "-k", kernel or "", "-F", "version", "nvidia"], timeout=5)
+                if built.strip() == userspace_version:
+                    fix = ("Para aplicar sem reiniciar: salve tudo, saia da sessão e rode "
+                           "'jarvos-rescue gpu' num terminal (Ctrl+Alt+F3).")
+                else:
+                    fix = "O kernel em uso não tem o módulo novo, então só um reinício resolve."
                 reasons.append(
                     f"Driver NVIDIA atualizado ({userspace_version}) mas o módulo em execução é "
-                    f"{module_version}; reinicie antes de trancar a tela."
+                    f"{module_version}: apps novos que usam a GPU podem não abrir e a tela não trava. {fix}"
                 )
         except Exception:
             pass
@@ -395,6 +491,7 @@ def main():
         bun_updates,
         npm_updates,
         uv_status,
+        stale_status,
     ]
 
     results = {}

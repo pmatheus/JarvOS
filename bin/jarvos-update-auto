@@ -53,6 +53,13 @@ rolled-back) notify -u critical "Atualização revertida" "Uma atualização fal
 offline) ;;
 *) notify -u critical "Atualização automática falhou" "Transcrição em /tmp/jarvos-update.log" ;;
 esac
+# A driver update the running kernel has not loaded breaks every new GPU
+# client, and lock.sh refuses to lock rather than lock a screen that could not
+# be unlocked. Nobody was watching the timer, so say so now.
+if ! gpu_problem="$(jarvos-gpu-ok 2>&1)"; then
+    notify -u critical "Driver NVIDIA pendente" "$gpu_problem Veja o painel de atualizações."
+fi
+
 ((devtools_rc == 0)) || [[ "$outcome" != ok ]] ||
     notify "Ferramentas de desenvolvimento" "Algumas ferramentas não foram atualizadas."
 

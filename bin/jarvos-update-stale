@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# jarvos-update-stale — every process still running code an update replaced.
+#
+# Pacman replaces files, not running programs. A process keeps the library or
+# binary it started with mapped, now marked "(deleted)", and runs that old code
+# until it restarts. This lists each such process, one per line:
+#
+#   <scope>\t<unit>\t<pid>\t<comm>
+#
+#   init      systemd itself (PID 1)
+#   system    a system service
+#   user      a unit of the user's service manager (apps, user services)
+#   session   the login session: the compositor and what it started directly
+#   other     anything else (containers, VMs)
+#
+# Only files under /usr and /opt count: those are what packages install. A
+# deleted /memfd or /dev/shm mapping is shared memory, not old code.
+#
+# Run as root to see every process; as a user it sees that user's own.
+#
+# Seams: JARVOS_PROC (/proc)
+
+set -uo pipefail
+
+PROC="${JARVOS_PROC:-/proc}"
+OLD_CODE=' /(usr|opt)/[^ ]* \(deleted\)$'
+
+scope_of() {
+    # scope_of <cgroup-path> — prints "<scope>\t<unit>"
+    local path="$1" unit
+    unit="$(grep -oE '[^/]+\.(service|scope|mount|socket|swap)' <<<"$path" | tail -1)"
+    case "$path" in
+    /init.scope) printf 'init\tinit.scope' ;;
+    /system.slice/*) printf 'system\t%s' "$unit" ;;
+    */user@*.service/*) printf 'user\t%s' "$unit" ;;
+    */session-*.scope*) printf 'session\t%s' "$unit" ;;
+    *) printf 'other\t%s' "${unit:-${path##*/}}" ;;
+    esac
+}
+
+for dir in "$PROC"/[0-9]*; do
+    pid="${dir##*/}"
+    stale=0
+    if grep -qE "$OLD_CODE" "$dir/maps" 2>/dev/null; then
+        stale=1
+    elif [[ "$(readlink "$dir/exe" 2>/dev/null)" =~ ^/(usr|opt)/.*\ \(deleted\)$ ]]; then
+        stale=1
+    fi
+    ((stale)) || continue
+
+    cgroup="$(sed -n 's/^0:://p' "$dir/cgroup" 2>/dev/null | head -1)"
+    comm="$(cat "$dir/comm" 2>/dev/null)"
+    printf '%s\t%s\t%s\n' "$(scope_of "$cgroup")" "$pid" "$comm"
+done | sort -t$'\t' -k1,1 -k2,2 -k3,3n
