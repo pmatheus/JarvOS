@@ -115,7 +115,7 @@ JsonObject {
             name: "Logout",
             icon: "exit_to_app",
             description: "Log out of the current session",
-            command: ["loginctl", "terminate-user", ""],
+            command: ["hyprctl", "dispatch", "hl.dsp.exit()"],
             enabled: true,
             dangerous: true
         },
