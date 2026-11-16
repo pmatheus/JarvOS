@@ -1,0 +1,25 @@
+#!/bin/sh
+# Restart the JarvOS shell once under strace and keep the trace, to find what
+# blocks its startup for ~25 s when the machine has no network.
+# Run it with the network cable unplugged; reconnect after it says "done".
+set -eu
+out="$HOME/qs-offline-trace/$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$out"
+nmcli -t -f DEVICE,STATE d > "$out/network-state.txt" 2>&1 || true
+
+systemctl --user stop quickshell-jarvos.service
+systemd-run --user --unit=qs-offline-trace --collect --quiet \
+  -p StandardOutput="file:$out/qs.out" -p StandardError="file:$out/qs.out" \
+  strace -f -tt -T -s 300 -o "$out/qs.trace" \
+  qs -p "$HOME/.config/quickshell/jarvos/shell.qml"
+
+start=$(date +%s)
+while [ $(( $(date +%s) - start )) -lt 60 ]; do
+  grep -q 'Configuration Loaded' "$out/qs.out" 2>/dev/null && break
+  sleep 1
+done
+echo "load took $(( $(date +%s) - start )) s" | tee "$out/load-time.txt"
+
+systemctl --user stop qs-offline-trace.service 2>/dev/null || true
+systemctl --user start quickshell-jarvos.service
+echo "done: trace saved in $out (reconnect the cable now)"

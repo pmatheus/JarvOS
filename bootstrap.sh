@@ -147,9 +147,10 @@ deploy_dotfiles(){
     step "deploying dotfiles into $cfg…"
     run mkdir -p "$cfg"
     run cp -rf "$base/config/.config/." "$cfg/"
-    run mkdir -p "$HOME/.local/bin"
-    run ln -sfn "$base/bin/jarvos-shell" "$HOME/.local/bin/jarvos-shell"
-    run ln -sfn "$base/bin/jarvos-desktop" "$HOME/.local/bin/jarvos-desktop"
+    # Every command, not just the shell: the shipped units run them by name.
+    # shellcheck source=lib/jarvos-link-commands.sh
+    source "$base/lib/jarvos-link-commands.sh"
+    run jarvos_link_commands "$base" "$HOME/.local/bin"
 
     # The secret gate ships on, not opt-in: it is off exactly when a new
     # clone needs it most.

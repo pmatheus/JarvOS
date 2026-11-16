@@ -247,9 +247,10 @@ install_dotfiles() {
     systemctl --user daemon-reload 2>/dev/null || true
     systemctl --user enable jarvos-update.timer 2>/dev/null || warn "could not enable jarvos-update.timer"
 
-    mkdir -p "$HOME/.local/bin"
-    ln -sfn "$base/bin/jarvos-shell" "$HOME/.local/bin/jarvos-shell"
-    ln -sfn "$base/bin/jarvos-desktop" "$HOME/.local/bin/jarvos-desktop"
+    # Every command, not just the shell: the units above run them by name.
+    # shellcheck source=lib/jarvos-link-commands.sh
+    source "$base/lib/jarvos-link-commands.sh"
+    jarvos_link_commands "$base" "$HOME/.local/bin"
 
     # A fresh install is already at the state every shipped migration
     # produces; mark them so first boot migrates nothing.
