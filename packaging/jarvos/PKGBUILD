@@ -1,6 +1,6 @@
 # Maintainer: JarvOS
 pkgname=jarvos
-pkgver=0.3.0
+pkgver=0.4.0
 pkgrel=1
 pkgdesc="JarvOS runtime: maintenance commands, migrations, and shipped defaults"
 arch=('any')

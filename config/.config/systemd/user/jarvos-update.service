@@ -1,6 +1,6 @@
 [Unit]
 Description=JarvOS automatic update (system, AUR and developer tools)
-Documentation=file:///usr/share/jarvos/bin/jarvos-update
+Documentation=file:%h/.local/bin/jarvos-update
 # Unattended runs on battery are how a laptop dies mid-transaction.
 ConditionACPower=true
 

@@ -93,12 +93,18 @@ run_cmd jarvos-update-system-pkgs
 
 reset_pacman
 start_test "a stale lock is removed and the transaction retried"
+# "Stale" means no package manager is running. Ask a stub, not the real
+# process table: a real pacman elsewhere on the box (an ISO build) made the
+# lock look held and this test fail.
+printf '#!/usr/bin/env bash\nexit 1\n' >"$FAKE_BIN/pgrep"
+chmod +x "$FAKE_BIN/pgrep"
 : >"$JARVOS_PACMAN_LOCK"
 pacman_script -Syu "1|error: failed to init transaction (unable to lock database)" "0|"
 run_cmd jarvos-update-system-pkgs
 assert_status "$RUN_STATUS" 0 &&
     assert_no_file "$JARVOS_PACMAN_LOCK" &&
     pass_test
+rm -f "$FAKE_BIN/pgrep"
 
 reset_pacman
 start_test "a bad signature repopulates the keyring and drops the corrupt download"
