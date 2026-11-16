@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# jarvos-update-pacnew — list the configuration files pacman left for a person
+# to merge (*.pacnew: a new default next to an edited file; *.pacsave: an
+# edited file kept after removal). Lists and announces, never merges: a
+# config merge decided unattended is how a box stops booting.
+#
+# Non-fatal by contract: always exits 0. The list lands in
+# $JARVOS_STATE/reports/pacnew.txt for the update report and the shell.
+#
+# jarvos:summary=List .pacnew/.pacsave files waiting to be merged
+# Seams: JARVOS_PACNEW_ROOT (default /etc).
+set -uo pipefail
+root="${JARVOS_PACNEW_ROOT:-/etc}"
+reports="${XDG_STATE_HOME:-$HOME/.local/state}/jarvos/reports"
+mkdir -p "$reports"
+list="$reports/pacnew.txt"
+find_cmd=(find "$root" -xdev \( -name '*.pacnew' -o -name '*.pacsave' \) -print)
+# /etc has directories only root can read; fall back to what the user sees.
+{ sudo -n "${find_cmd[@]}" 2>/dev/null || "${find_cmd[@]}" 2>/dev/null; } | sort -u >"$list.part"
+mv -f "$list.part" "$list"
+n="$(grep -c . "$list" || true)"
+if ((n == 0)); then
+    echo "jarvos-update-pacnew: no configuration files waiting to be merged"
+else
+    echo "jarvos-update-pacnew: $n configuration file(s) waiting to be merged:"
+    sed 's/^/  /' "$list"
+    echo "Review and merge with: sudo pacdiff"
+fi
+exit 0

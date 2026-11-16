@@ -21,7 +21,7 @@ ORDER="$FAKE_STATE/step-order"
 # resolves them through $PATH, which is exactly why it can be tested at all.
 STEPS=(jarvos-update-git jarvos-update-keyring jarvos-update-system-pkgs
     jarvos-migrate jarvos-hook jarvos-update-aur-pkgs
-    jarvos-update-orphan-pkgs jarvos-update-analyze-logs jarvos-update-restart
+    jarvos-update-orphan-pkgs jarvos-update-pacnew jarvos-update-analyze-logs jarvos-update-restart
     jarvos-update-health jarvos-update-resolve jarvos-update-restart-stale jarvos-version)
 stub_steps() {
     : >"$ORDER"
@@ -297,5 +297,12 @@ assert_status "$refused_status" 0 &&
     { [[ "$(grep -c '^jarvos-update-system-pkgs$' "$ORDER")" -eq 1 ]] ||
         fail_test "system packages did not run once: $refused_out"; } &&
     pass_test
+
+start_test "pacnew files are looked for after the packages that leave them"
+stub_steps
+JARVOS_UPDATE_TRANSCRIPT=1 run_cmd jarvos-update -y
+assert_status "$RUN_STATUS" 0 &&
+    { [[ "$(pos jarvos-update-pacnew)" -gt "$(pos jarvos-update-system-pkgs)" ]] ||
+        fail_test "pacnew ran before packages"; } && pass_test
 
 summary "jarvos-update"

@@ -60,6 +60,14 @@ if ! gpu_problem="$(jarvos-gpu-ok 2>&1)"; then
     notify -u critical "Driver NVIDIA pendente" "$gpu_problem Veja o painel de atualizações."
 fi
 
+# pacman left new defaults next to edited files. Nothing merges them
+# unattended, so the person has to hear about it.
+pacnew_n="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("pacnew", 0))' \
+    "$REPORT_DIR/last-update.json" 2>/dev/null || echo 0)"
+if [[ "$pacnew_n" =~ ^[0-9]+$ ]] && ((pacnew_n > 0)); then
+    notify "Configurações para revisar" "$pacnew_n arquivo(s) .pacnew/.pacsave esperando revisão. Rode: sudo pacdiff"
+fi
+
 ((devtools_rc == 0)) || [[ "$outcome" != ok ]] ||
     notify "Ferramentas de desenvolvimento" "Algumas ferramentas não foram atualizadas."
 

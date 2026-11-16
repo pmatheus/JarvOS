@@ -148,8 +148,10 @@ PRE=""
 write_report() {
     local problems="" p
     for p in "${PROBLEMS[@]}"; do problems+="${problems:+, }\"$p\""; done
-    printf '{"started": "%s", "finished": "%s", "outcome": "%s", "problems": [%s], "snapshot": "%s", "automatic": %s, "transcript": "%s"}\n' \
-        "$STARTED" "$(date -Iseconds)" "$OUTCOME" "$problems" "$PRE" \
+    local pacnew=0
+    [[ -r "$JARVOS_STATE/reports/pacnew.txt" ]] && pacnew="$(grep -c . "$JARVOS_STATE/reports/pacnew.txt" || true)"
+    printf '{"started": "%s", "finished": "%s", "outcome": "%s", "problems": [%s], "pacnew": %s, "snapshot": "%s", "automatic": %s, "transcript": "%s"}\n' \
+        "$STARTED" "$(date -Iseconds)" "$OUTCOME" "$problems" "${pacnew:-0}" "$PRE" \
         "$([[ -n "${JARVOS_UPDATE_AUTO:-}" ]] && echo true || echo false)" "$TRANSCRIPT" \
         >"$REPORT_DIR/last-update.json.tmp"
     mv -f "$REPORT_DIR/last-update.json.tmp" "$REPORT_DIR/last-update.json"
@@ -249,6 +251,7 @@ jarvos-state check aur-update-failed && PROBLEMS+=(aur)
 system_step jarvos-update-health health-after-aur
 
 jarvos-update-orphan-pkgs
+jarvos-update-pacnew
 jarvos-update-analyze-logs
 jarvos-update-restart
 jarvos-update-restart-stale
