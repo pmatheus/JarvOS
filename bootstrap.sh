@@ -151,6 +151,8 @@ deploy_dotfiles(){
     # shellcheck source=lib/jarvos-link-commands.sh
     source "$base/lib/jarvos-link-commands.sh"
     run jarvos_link_commands "$base" "$HOME/.local/bin"
+    # The shell is code: link it, so every update of the checkout reaches it.
+    run jarvos_link_shell "$base" "$cfg"
 
     # The secret gate ships on, not opt-in: it is off exactly when a new
     # clone needs it most.

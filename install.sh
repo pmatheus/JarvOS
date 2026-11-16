@@ -251,6 +251,8 @@ install_dotfiles() {
     # shellcheck source=lib/jarvos-link-commands.sh
     source "$base/lib/jarvos-link-commands.sh"
     jarvos_link_commands "$base" "$HOME/.local/bin"
+    # The shell is code: link it, so every update of the checkout reaches it.
+    jarvos_link_shell "$base" "$XDG_CONFIG_HOME"
 
     # A fresh install is already at the state every shipped migration
     # produces; mark them so first boot migrates nothing.
