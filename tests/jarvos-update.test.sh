@@ -274,4 +274,28 @@ JARVOS_UPDATE_RESOLVING=1 JARVOS_UPDATE_TRANSCRIPT=1 run_cmd jarvos-update -y
     assert_not_contains "$ORDER" "jarvos-update-git" &&
     pass_test
 
+start_test "a refused sleep inhibitor does not abort the update"
+# With no active graphical session, as when the nightly timer fires, polkit
+# wants a password for org.freedesktop.login1.inhibit-block-sleep. Nobody can
+# type it, systemd-inhibit fails, and the update used to die with it.
+stub_steps
+cat >"$FAKE_BIN/systemd-inhibit" <<'EOF'
+#!/usr/bin/env bash
+echo "Failed to inhibit: Access denied" >&2
+exit 1
+EOF
+chmod +x "$FAKE_BIN/systemd-inhibit"
+refused_out="$(env HOME="$FAKE_HOME" PATH="$FAKE_BIN:$REPO_ROOT/bin:$PATH" \
+    XDG_STATE_HOME="$FAKE_HOME/.local/state" FAKE_STATE="$FAKE_STATE" \
+    JARVOS_PATH="$FAKE_BASE" JARVOS_UPDATE_TRANSCRIPT=1 \
+    timeout 30 "$REPO_ROOT/bin/jarvos-update" -y 2>&1)"
+refused_status=$?
+rm -f "$FAKE_BIN/systemd-inhibit"
+assert_status "$refused_status" 0 &&
+    { [[ "$(grep -c '^snapper$' "$ORDER")" -eq 1 ]] ||
+        fail_test "snapper ran $(grep -c '^snapper$' "$ORDER") times: $refused_out"; } &&
+    { [[ "$(grep -c '^jarvos-update-system-pkgs$' "$ORDER")" -eq 1 ]] ||
+        fail_test "system packages did not run once: $refused_out"; } &&
+    pass_test
+
 summary "jarvos-update"

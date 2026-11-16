@@ -80,9 +80,17 @@ fi
 # a lock taken first would be held by a process that is no longer us and the
 # re-exec'd shell would block on flock forever. Re-execing here also means
 # the prune and the snapshot below happen once, not once per re-exec.
+# The inhibitor is a courtesy, never a precondition. Without an active
+# graphical session (the nightly timer, an SSH login) polkit asks for a
+# password nobody can type, and an update that dies on that never runs at
+# all. So probe first, without asking, and go on uninhibited if refused.
 if command -v systemd-inhibit >/dev/null 2>&1 && [[ -z "${JARVOS_UPDATE_INHIBITED:-}" ]]; then
     export JARVOS_UPDATE_INHIBITED=1
-    exec systemd-inhibit --what=sleep:idle --why="JarvOS update" "$0" "$@"
+    if timeout 15 systemd-inhibit --no-ask-password --what=sleep:idle \
+        --why="JarvOS update (probe)" true >/dev/null 2>&1; then
+        exec systemd-inhibit --no-ask-password --what=sleep:idle --why="JarvOS update" "$0" "$@"
+    fi
+    echo "jarvos-update: sleep inhibitor refused (no active session); continuing without it" >&2
 fi
 
 # --- prelude 3: one update at a time -------------------------------------
