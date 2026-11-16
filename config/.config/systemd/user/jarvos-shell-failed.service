@@ -1,0 +1,7 @@
+[Unit]
+Description=JarvOS shell gave up restarting: keep its log and tell the user
+
+[Service]
+Type=oneshot
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
+ExecStart=/usr/bin/env jarvos-shell-failed

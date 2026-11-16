@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# jarvos-shell-failed — what systemd runs (OnFailure=) when the shell has
+# crashed more often than its start limit allows and systemd stopped
+# restarting it. Keeps the shell's recent log, tells the user, and offers the
+# diagnosis. It never runs the agent itself: that costs money and wants a
+# person to say yes.
+#
+# jarvos:summary=Report a shell that keeps crashing, and offer the diagnosis
+set -uo pipefail
+state="${XDG_STATE_HOME:-$HOME/.local/state}/jarvos/reports"
+mkdir -p "$state"
+report="$state/shell-failed.log"
+{
+    printf 'JarvOS shell gave up restarting at %s\n\n' "$(date -Is)"
+    journalctl --user -u quickshell-jarvos.service -n 80 --no-pager 2>&1
+} >"$report"
+if command -v notify-send >/dev/null 2>&1; then
+    notify-send -a JarvOS -u critical "JarvOS shell keeps crashing" \
+        "Log: $report — start it again with: jarvos-shell restart — diagnose with: jarvos-agent-diagnose shell" \
+        2>/dev/null || true
+fi
+echo "jarvos-shell-failed: log kept in $report"

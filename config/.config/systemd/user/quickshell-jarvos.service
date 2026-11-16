@@ -4,12 +4,18 @@ PartOf=graphical-session.target
 After=graphical-session.target
 StartLimitIntervalSec=30
 StartLimitBurst=5
+# Past the start limit systemd stops trying; say so instead of leaving a bare desktop.
+OnFailure=jarvos-shell-failed.service
 
 [Service]
 Type=simple
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
 ExecStart=/usr/bin/env jarvos-shell start
-Restart=no
+# A crashed shell comes back by itself; a clean stop (logout) does not.
+Restart=on-failure
+RestartSec=2
+# Restart without passing through "failed": OnFailure= then means "gave up", not "crashed once".
+RestartMode=direct
 
 [Install]
 WantedBy=graphical-session.target

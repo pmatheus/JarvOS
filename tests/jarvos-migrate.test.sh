@@ -206,4 +206,18 @@ start_test "execs.conf adopts once per login"
 assert_contains "$REPO_ROOT/config/.config/hypr/hyprland/execs.conf" "jarvos-migrate --adopt" &&
     pass_test
 
+start_test "a failing migration keeps its output and names the diagnosis"
+# Without this the failure lived only in the terminal of whoever ran the
+# update, and the nightly timer has no terminal.
+reset_world
+migration 1700000060 'echo "sixty broke on purpose"; exit 4'
+run_cmd jarvos-migrate
+REPORT="$FAKE_HOME/.local/state/jarvos/reports/migration-1700000060.log"
+{ [[ "$RUN_STATUS" -ne 0 ]] || fail_test "expected non-zero exit, got 0"; } &&
+    assert_file_exists "$REPORT" &&
+    assert_contains "$REPORT" "sixty broke on purpose" &&
+    assert_stdout_contains "$RUN_OUT" "jarvos-agent-diagnose migration 1700000060" &&
+    assert_no_file "$MARKERS/1700000060.sh" &&
+    pass_test
+
 summary "jarvos-migrate"

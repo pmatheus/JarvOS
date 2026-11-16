@@ -93,6 +93,8 @@ while [[ -e "$PACMAN_LOCK" ]]; do
 done
 
 mkdir -p "$MARKERS"
+REPORTS="$JARVOS_STATE/reports"
+mkdir -p "$REPORTS"
 while IFS= read -r file; do
     [[ -n "$file" ]] || continue
     # Strictness comes from here, which is why migrations carry no shebang.
@@ -102,6 +104,21 @@ while IFS= read -r file; do
     # </dev/null keeps a migration off this loop's stdin, which is the pending
     # list: anything that drained it would silently skip every migration after
     # itself, unrun and unmarked, while the run still reported success.
-    bash -euo pipefail "$file" </dev/null
-    : >"$MARKERS/${file##*/}"
+    #
+    # The output is kept as well as shown: the nightly timer has no terminal,
+    # so a failure seen only on screen is a failure nobody sees.
+    name="${file##*/}"
+    report="$REPORTS/migration-${name%.sh}.log"
+    if ! bash -euo pipefail "$file" </dev/null 2>&1 | tee "$report.part"; then
+        mv -f "$report.part" "$report"
+        echo "jarvos-migrate: ${name%.sh} failed; its output is in $report" >&2
+        echo "Diagnose with: jarvos-agent-diagnose migration ${name%.sh} \"\$(cat $report)\"" >&2
+        if command -v notify-send >/dev/null 2>&1; then
+            notify-send -a JarvOS -u critical "JarvOS migration failed" \
+                "${name%.sh} — run: jarvos-agent-diagnose migration ${name%.sh}" 2>/dev/null || true
+        fi
+        exit 1
+    fi
+    rm -f "$report.part"
+    : >"$MARKERS/$name"
 done < <(pending)
