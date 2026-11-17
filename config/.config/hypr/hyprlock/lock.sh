@@ -24,4 +24,6 @@ if [[ -n "$GPU_OK" ]] && ! "$GPU_OK" 2>/dev/null; then
 fi
 
 "$HOME/.config/hypr/hyprlock/sync-wallpaper.sh" || true
+# The proverb image must exist before hyprlock reads it.
+"$HOME/.config/hypr/hyprlock/hanzi.sh" png >/dev/null 2>&1 || true
 exec hyprlock "$@"

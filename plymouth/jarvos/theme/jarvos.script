@@ -1,0 +1,91 @@
+// JarvOS Plymouth theme: the lockup on ink, a hairline boot progress, and a
+// disk password field shaped like the lockscreen input. All text is baked
+// into images by build.sh, so the initramfs carries no fonts.
+
+ink = 0.051; // #0d0f13, same as the GRUB theme
+Window.SetBackgroundTopColor(ink, ink + 0.008, ink + 0.024);
+Window.SetBackgroundBottomColor(ink, ink + 0.008, ink + 0.024);
+
+cx = Window.GetX() + Window.GetWidth() / 2;
+cy = Window.GetY() + Window.GetHeight() / 2;
+
+lockup.image = Image("lockup.png");
+lockup.sprite = Sprite(lockup.image);
+lockup.sprite.SetX(Math.Int(cx - lockup.image.GetWidth() / 2));
+lockup.sprite.SetZ(10);
+
+// ── boot progress ────────────────────────────────────────────────────────
+bar_w = 240;
+track.image = Image("track.png").Scale(bar_w, 2);
+track.sprite = Sprite(track.image);
+track.sprite.SetX(Math.Int(cx - bar_w / 2));
+fill.base = Image("fill.png");
+fill.sprite = Sprite();
+fill.sprite.SetX(Math.Int(cx - bar_w / 2));
+
+// ── password prompt ──────────────────────────────────────────────────────
+prompt.image = Image("prompt.png");
+prompt.sprite = Sprite(prompt.image);
+prompt.sprite.SetX(Math.Int(cx - prompt.image.GetWidth() / 2));
+field.image = Image("field.png");
+field.sprite = Sprite(field.image);
+field.sprite.SetX(Math.Int(cx - field.image.GetWidth() / 2));
+hint.image = Image("hint.png");
+hint.sprite = Sprite(hint.image);
+hint.sprite.SetX(Math.Int(cx - hint.image.GetWidth() / 2));
+bullet_image = Image("bullet.png");
+bullet_gap = 16;
+bullet_max = 18;
+
+fun layout(asking) {
+    if (asking) {
+        lockup.sprite.SetY(Math.Int(cy - 150));
+        prompt.sprite.SetY(Math.Int(cy - 30));
+        field.sprite.SetY(Math.Int(cy + 6));
+        hint.sprite.SetY(Math.Int(cy + 72));
+        show = 1;
+    } else {
+        lockup.sprite.SetY(Math.Int(cy - lockup.image.GetHeight() / 2 - 20));
+        show = 0;
+    }
+    prompt.sprite.SetOpacity(show);
+    field.sprite.SetOpacity(show);
+    hint.sprite.SetOpacity(show);
+    track.sprite.SetOpacity(1 - show);
+    fill.sprite.SetOpacity(1 - show);
+    track.sprite.SetY(Math.Int(cy + 50));
+    fill.sprite.SetY(Math.Int(cy + 50));
+    if (!asking) {
+        for (i = 0; global.bullets[i]; i++) global.bullets[i].SetOpacity(0);
+    }
+}
+
+fun display_password(prompt_text, count) {
+    layout(1);
+    n = Math.Min(count, bullet_max);
+    left = cx - (n * bullet_gap - (bullet_gap - bullet_image.GetWidth())) / 2;
+    top = field.sprite.GetY() + (field.image.GetHeight() - bullet_image.GetHeight()) / 2;
+    for (i = 0; i < n; i++) {
+        // global.: a sprite assigned to a function-local disappears on return.
+        if (!global.bullets[i]) global.bullets[i] = Sprite(bullet_image);
+        global.bullets[i].SetPosition(Math.Int(left + i * bullet_gap), Math.Int(top), 20);
+        global.bullets[i].SetOpacity(1);
+    }
+    for (i = n; global.bullets[i]; i++) global.bullets[i].SetOpacity(0);
+}
+Plymouth.SetDisplayPasswordFunction(display_password);
+
+fun display_normal() { layout(0); }
+Plymouth.SetDisplayNormalFunction(display_normal);
+
+fun boot_progress(duration, progress) {
+    w = Math.Int(bar_w * progress);
+    if (w < 1) w = 1;
+    fill.sprite.SetImage(fill.base.Scale(w, 2));
+}
+Plymouth.SetBootProgressFunction(boot_progress);
+
+fun quit() { layout(0); }
+Plymouth.SetQuitFunction(quit);
+
+layout(0);

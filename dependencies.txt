@@ -148,6 +148,7 @@ inotify-tools
 # === BOOTLOADER ===
 grub
 grub-btrfs
+plymouth
 efibootmgr
 
 # === APPS ===

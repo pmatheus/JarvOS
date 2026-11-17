@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
-"""Render the current JarvOS lockscreen proverb as a Pango-markup interlinear
-block (A2 — Calligraphic Interlinear): pinyin / hanzi / arrow / gloss.
+"""Render the current JarvOS lockscreen proverb as an interlinear block:
+pinyin / hanzi / hairline / gloss per character, then the full meaning and
+the doctrine/stratagem tag.
+
+`png` (used by hyprlock.conf) draws it with Pango+Cairo into a transparent PNG
+in which every column is centred exactly on its own axis, and prints the PNG
+path. `block` is the older Pango-markup text version (A2), which pads columns
+with spaces and drifts whenever the rows use different fonts or sizes.
 
 The proverb is read from the same runtime cache `proverb.sh` fills, so the
 hanzi block and any other proverb label always agree. Emits markup on stdout.
@@ -9,6 +15,7 @@ Token spec format: "<hanzi>|<pinyin>|<gloss>" fields joined by ";" (spaces are
 allowed inside a gloss).
 """
 
+import json
 import os
 import subprocess
 import sys
@@ -192,6 +199,113 @@ def render(entry):
     return "\n".join(lines)
 
 
+# ── PNG renderer (A3 — column-true interlinear) ──────────────────────────
+# Sizes are pixels on a scale-1 1080p monitor. The canvas height is the
+# hyprlock `image` size, so keep both in step.
+CANVAS_W, CANVAS_H = 1600, 172
+COL_GAP, COL_MIN = 34, 72
+ROWS = {
+    # name: (font, px, letter-spacing px, baseline y, rgba)
+    "pinyin":  ("Inter Light Italic", 15, 0.2, 16, (0.541, 0.561, 0.596, 1.0)),
+    "hanzi":   ("Noto Serif CJK SC SemiBold", 46, 0, 66, (0.961, 0.969, 0.980, 1.0)),
+    "gloss":   ("Inter Medium", 14, 0.3, 106, (0.753, 0.784, 0.816, 1.0)),
+    "meaning": ("Inter Light Italic", 17, 0.2, 138, (0.961, 0.969, 0.980, 0.82)),
+    "tag":     ("JetBrainsMono NF Light", 10, 2.4, 162, (0.502, 0.525, 0.584, 0.75)),
+}
+HAIRLINE = (77, 89, (1.0, 1.0, 1.0, 0.22))   # y from, y to, rgba
+
+
+def _layout(ctx, row, text):
+    import gi
+    gi.require_version("Pango", "1.0")
+    gi.require_version("PangoCairo", "1.0")
+    from gi.repository import Pango, PangoCairo
+    font, px, spacing, _, _ = ROWS[row]
+    layout = PangoCairo.create_layout(ctx)
+    desc = Pango.FontDescription.from_string(font)
+    desc.set_absolute_size(px * Pango.SCALE)
+    layout.set_font_description(desc)
+    if spacing:
+        attrs = Pango.AttrList()
+        attrs.insert(Pango.attr_letter_spacing_new(int(spacing * Pango.SCALE)))
+        layout.set_attributes(attrs)
+    layout.set_text(text, -1)
+    _, logical = layout.get_pixel_extents()
+    return layout, logical.width, layout.get_baseline() / Pango.SCALE
+
+
+def plan(entry, ctx):
+    """Column geometry: [(measured rows, centre_x)]. All columns share the
+    widest column's width, so the characters keep an even rhythm."""
+    cols = [{name: _layout(ctx, name, text)
+             for name, text in (("pinyin", py), ("hanzi", hz), ("gloss", gl))}
+            for hz, py, gl in entry["tokens"]]
+    width = max(COL_MIN, max(w for rows in cols for _, w, _ in rows.values()) + COL_GAP)
+    x0 = (CANVAS_W - width * len(cols)) / 2
+    return [(rows, x0 + width * (i + 0.5)) for i, rows in enumerate(cols)]
+
+
+def _draw(ctx, layout, width, baseline, row, centre):
+    from gi.repository import PangoCairo
+    *_, base_y, rgba = ROWS[row]
+    ctx.set_source_rgba(*rgba)
+    ctx.move_to(round(centre - width / 2), round(base_y - baseline))
+    PangoCairo.show_layout(ctx, layout)
+
+
+def render_png(entry, out):
+    import cairo
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, CANVAS_W, CANVAS_H)
+    ctx = cairo.Context(surface)
+    if entry:
+        for rows, centre in plan(entry, ctx):
+            for name, (layout, width, baseline) in rows.items():
+                _draw(ctx, layout, width, baseline, name, centre)
+            y0, y1, rgba = HAIRLINE
+            ctx.set_source_rgba(*rgba)
+            ctx.rectangle(round(centre), y0, 1, y1 - y0)
+            ctx.fill()
+        for name, text in (("meaning", entry["en"]), ("tag", entry["tag"].upper())):
+            layout, width, baseline = _layout(ctx, name, text)
+            _draw(ctx, layout, width, baseline, name, CANVAS_W / 2)
+    tmp = f"{out}.tmp"
+    surface.write_to_png(tmp)
+    os.replace(tmp, out)   # hyprlock never reads a half-written file
+
+
+def png_path():
+    return os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "jarvos-lock-hanzi.png")
+
+
+def emit_png(entry):
+    """Render only when the proverb changed, so hyprlock reloads only then."""
+    out = png_path()
+    key = json.dumps([entry and entry["cn"], CANVAS_W, CANVAS_H, ROWS], ensure_ascii=False)
+    key_file = f"{out}.key"
+    try:
+        same = os.path.exists(out) and open(key_file, encoding="utf-8").read() == key
+    except OSError:
+        same = False
+    if not same:
+        render_png(entry, out)
+        with open(key_file, "w", encoding="utf-8") as fh:
+            fh.write(key)
+    print(out)
+
+
+def layout_json(entry):
+    """Where each row of each column is drawn (left x as rounded by _draw, and
+    its width), plus the column axis. Tests check every row is centred on it."""
+    import cairo
+    ctx = cairo.Context(cairo.ImageSurface(cairo.FORMAT_ARGB32, 1, 1))
+    cols = []
+    for rows, centre in plan(entry, ctx):
+        cols.append({"centre": centre,
+                     "rows": {name: {"x": round(centre - w / 2), "width": w}
+                              for name, (_, w, _) in rows.items()}})
+    print(json.dumps({"canvas": [CANVAS_W, CANVAS_H], "columns": cols}, ensure_ascii=False))
+
+
 def main():
     which = sys.argv[1] if len(sys.argv) > 1 else "block"
     proverb = os.path.join(HELPERS, "proverb.sh")
@@ -201,11 +315,20 @@ def main():
     except Exception:
         cn, en = "", ""
 
+    entry = BY_CN.get(cn) if cn else None
+    if which == "png":
+        emit_png(entry)
+        return 0
+    if which == "layout":
+        if entry is None:
+            return 1
+        layout_json(entry)
+        return 0
+
     if not cn:
         print("")
         return 0
 
-    entry = BY_CN.get(cn)
     if entry is None:
         # Unknown proverb: degrade gracefully to the plain pair.
         print(cn if which != "en" else en)

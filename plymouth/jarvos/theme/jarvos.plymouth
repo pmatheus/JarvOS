@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=JarvOS
+Description=JarvOS boot splash and disk password prompt
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/jarvos
+ScriptFile=/usr/share/plymouth/themes/jarvos/jarvos.script

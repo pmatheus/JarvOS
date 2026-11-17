@@ -195,6 +195,13 @@ setup_grub_theme() {
     fi
 }
 
+setup_plymouth_theme() {
+    if [[ -x "$base/plymouth/install-theme.sh" ]] && command -v plymouth-set-default-theme &>/dev/null; then
+        step "Installing Plymouth theme (boot splash, disk password prompt)..."
+        sudo "$base/plymouth/install-theme.sh" && ok "Plymouth theme installed"
+    fi
+}
+
 setup_sddm() {
     step "Setting up SDDM..."
     if [[ -d "$base/sddm" ]]; then
@@ -326,6 +333,7 @@ if [[ "$MINIMAL" == false ]]; then
     setup_sddm
     setup_grub_timeshift
     setup_grub_theme
+    setup_plymouth_theme
 fi
 
 echo ""

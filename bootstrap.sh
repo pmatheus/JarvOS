@@ -258,6 +258,17 @@ setup_grub_theme(){
     run sudo "$base/grub/install-theme.sh" || warn "GRUB theme failed; continuing"
 }
 
+# Same idea for the boot splash and disk password prompt: only where Plymouth
+# is installed; install-theme.sh adds the hook only to a systemd initramfs.
+setup_plymouth_theme(){
+    if ! command -v plymouth-set-default-theme >/dev/null 2>&1; then
+        warn "plymouth not installed; skipping the boot splash"
+        return 0
+    fi
+    step "installing the Plymouth theme…"
+    run sudo "$base/plymouth/install-theme.sh" || warn "Plymouth theme failed; continuing"
+}
+
 enable_services(){
     local scope unit tier
     step "enabling services…"
@@ -280,6 +291,7 @@ if $STAGE1; then
     setup_appearance
     setup_sddm
     setup_grub_theme
+    setup_plymouth_theme
     enable_services
     echo
     ok "JarvOS stage 1 complete — the desktop is installed."
